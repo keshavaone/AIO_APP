@@ -5,6 +5,8 @@ import sys, os, time, ast, logging, hashlib, base64
 import pandas as pd
 from cryptography.fernet import Fernet
 from SecureAPI import Agent  # type: ignore
+import CONSTANTS  #type: ignore
+from pymongo import MongoClient # type: ignore
 
 # Setup logging with rotation
 from logging.handlers import RotatingFileHandler
@@ -110,7 +112,7 @@ class PIIWindow(QMainWindow):
                     return
                 
                 self.update_log(self.agent.get_current_time(), "PII Data Upload Function Response: " + str(response))
-                self.update_log(self.agent.get_current_time(), "PII Data Upload Time: " + str(time.time() - pre_upload_time_stamp))
+                self.update_log(self.agent.get_current_time(), f"PII Data Upload Time: {time.time() - pre_upload_time_stamp:.2f} Seconds")
                 
                 if response:
                     QMessageBox.information(self, "Upload Complete", "Data uploaded successfully!")
@@ -129,10 +131,9 @@ class PIIWindow(QMainWindow):
         self.update_log(self.agent.get_current_time(), "PII Data Download Attempted")
         pre_download_time_stamp = time.time()
         response = self.agent.download_excel()
-        self.update_log(self.agent.get_current_time(), "PII Data Download Time: " + str(time.time() - pre_download_time_stamp))
+        self.update_log(self.agent.get_current_time(), f"PII Data Download Time: {time.time() - pre_download_time_stamp:.2f} Seconds")
         self.update_log(self.agent.get_current_time(), "PII Data Download Function Response: " + str(response))
         if response:
-            self.decrypt_file(response)
             QMessageBox.information(self, "Download Complete", "Data downloaded and decrypted successfully!")
         else:
             QMessageBox.warning(self, "Download Failed", "Failed to download data!")
@@ -146,12 +147,6 @@ class PIIWindow(QMainWindow):
         self.btnConnectServer.clicked.disconnect(self.show_password_input)
         self.btnConnectServer.clicked.connect(self.authenticate_and_connect)
 
-    import pandas as pd
-    import ast
-    import time
-    from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QAbstractItemView, QHeaderView, QAction, QMenu
-    from PyQt5.QtCore import Qt, QEvent
-    from PyQt5.QtGui import QCursor, QIcon
     
     def show_data_window(self):
         # Secure the window by disabling certain features
@@ -258,7 +253,7 @@ class PIIWindow(QMainWindow):
 
     def authenticate_and_connect(self):
         password = self.password_input.text()
-        env_password = os.environ.get('APP_PASSWORD') 
+        env_password = CONSTANTS.APP_PASSWORD
 
         if not env_password:
             QMessageBox.warning(self, "Security Warning", "Please Activate your Secure Environment before performing operations")
@@ -279,9 +274,7 @@ class PIIWindow(QMainWindow):
 
     def connect_to_server(self):
         self.btnConnectServer.setDisabled(True)
-        file_name = os.getenv("AWS_FILE_NAME")
-        s3 = os.get_env("AWS_S3_BUCKET")
-        self.agent = Agent(s3=s3, file_name=file_name)
+        self.agent = Agent(s3=CONSTANTS.AWS_S3, file_name=CONSTANTS.AWS_FILE)
         self.btnConnectServer.setText('Connected')
         self.btnConnectServer.setDisabled(True)
         self.btnConnectServer.setStyleSheet("background-color: green; color: white;")

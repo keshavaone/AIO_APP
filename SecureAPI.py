@@ -5,6 +5,9 @@ import base64,os,io,time,json,time
 import pandas as pd #type:ignore
 import atexit
 import ast, datetime
+import CONSTANTS
+from pymongo import MongoClient # type: ignore
+from pymongo.server_api import ServerApi # type: ignore
 
 @dataclass(eq=False, repr=False, order=False)
 class Agent:
@@ -23,6 +26,14 @@ class Agent:
     def __post_init__(self):
         self.status = {'Waking Up Mr.Agent...': self.get_current_time()}
         print('INIT - Waking Up Mr.Agent...',end='\r')
+        
+        # Create a MongoClient to the running MongoDB instance
+        client = MongoClient('mongodb://localhost:27017/',server_api=ServerApi('1'))
+
+        # Access the database (MyPII) and collection (PIIData)
+        db = client['MyPII']
+        self.collection = db['PIIData']
+        
         os.chdir(os.path.dirname(os.path.realpath(__file__)))
         self.kms_client = boto3.client('kms')
         self.data_path:str = self.file_name
@@ -45,7 +56,10 @@ class Agent:
     def fetch_my_key(self):
         print('AGNT_RQST: Agent Requested to Perform Connection to Cloud...')
         self.status['Agent Requested to Perform Connection to Cloud...'] = self.get_current_time()
-        self.__df = self.read_excel_from_s3(self.s3,self.file_name)
+        # self.__df = self.read_excel_from_s3(self.s3,self.file_name)
+        data = self.collection.find()
+        df = pd.DataFrame(data)
+        self.__df = df.drop('_id',axis=1)
         grouped = self.__df.groupby('Category')['Type'].apply(list).reset_index()
         print('AGNT_RQST: Agent Requested to Perform Connection to Cloud...Successful')
         self.status['Connection to Cloud - Successful'] = self.get_current_time()
@@ -126,6 +140,7 @@ class Agent:
     
     def decrypt_data(self,item):
         return self.cipher_suite.decrypt(item).decode('utf-8')
+    
     def get_all_data(self):
         df = self.__df.copy()
         if '_id' in df:
@@ -274,8 +289,10 @@ class Agent:
 
 if __name__ == '__main__':
     
-    agent = Agent(s3='mypii',file_name='MyPII.PIIData.xlsx')
+    agent = Agent(s3=CONSTANTS.AWS_S3,file_name=CONSTANTS.AWS_FILE)
+    data = agent.get_all_data()
+    print(data)
     # agent.upload_excel_to_s3('MyPII.PIIData.xlsx')
-    agent.perform_specific_output()
+    # agent.perform_specific_output()
     # agent.download_excel()
     # agent.begin_work()
