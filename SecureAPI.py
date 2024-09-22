@@ -40,7 +40,6 @@ class Agent:
         aws_key = os.getenv('AWS_KEY')
         assert aws_key != None
         self.__key_id = aws_key
-        print('READY - The Agent is now Ready to Talk to Cloud'.center(90,'-'))
         self.status['Agent Ready'] = self.get_current_time()
         self.fetch_my_key()
         # self.process_file(mode='w',data='Success',file_path='status.txt')
@@ -54,14 +53,12 @@ class Agent:
         self.cipher_suite = Fernet(base64.urlsafe_b64encode(self.__key))
 
     def fetch_my_key(self):
-        print('AGNT_RQST: Agent Requested to Perform Connection to Cloud...')
         self.status['Agent Requested to Perform Connection to Cloud...'] = self.get_current_time()
         # self.__df = self.read_excel_from_s3(self.s3,self.file_name)
         data = self.collection.find()
         df = pd.DataFrame(data)
         self.__df = df.drop('_id',axis=1)
         grouped = self.__df.groupby('Category')['Type'].apply(list).reset_index()
-        print('AGNT_RQST: Agent Requested to Perform Connection to Cloud...Successful')
         self.status['Connection to Cloud - Successful'] = self.get_current_time()
         JsonData = {}
         
@@ -77,12 +74,10 @@ class Agent:
                 JsonData[keys[0]].append({keys[1]: item[1]})
 
         JsonData = json.dumps(JsonData)
-        self.__encoded_key = self.filter_from_s3('KeyID')
+        self.__encoded_key = self.filter_from_db('KeyID')
         response = self.kms_client.decrypt(CiphertextBlob=self.__encoded_key)
         fernet_key = base64.urlsafe_b64encode(response['Plaintext'])
         self.cipher_suite = Fernet(fernet_key)
-        print('AGNT_DCD_RQST: Unlocking Secure Vault and Decoding data into Human Readable Language...Successful')
-        # self.process_file('w',str(JsonData),r'NewData.txt')
         return 
     
     def generate_secure_key(self, key_spec):
@@ -93,7 +88,7 @@ class Agent:
         return response
 
     
-    def filter_from_s3(self,item_name = None,download_request = False):
+    def filter_from_db(self,item_name = None,download_request = False):
         if download_request:
             return 0
         elif item_name is not None:
@@ -107,10 +102,10 @@ class Agent:
             self.download_excel()
             output = self.data_path  
         elif input_request == 'Re-Encrypt':
-            self.upload_excel_to_s3(self.file_name)
+            self.upload_securely(self.file_name)
             output = 'Success'
         else:
-            data = self.filter_from_s3(input_request)
+            data = self.filter_from_db(input_request)
             pre_output = self.decrypt_data(data)
             post_output = pd.DataFrame(data=pd.read_json(io.StringIO(pre_output), orient='records'))
             output = post_output.set_index('Item Name').to_json()
@@ -137,12 +132,14 @@ class Agent:
             print(f"Error reading Excel file from S3: {e}")
             return None
     
+    def refresh_data(self):
+        return pd.DataFrame(self.collection.find())
     
     def decrypt_data(self,item):
         return self.cipher_suite.decrypt(item).decode('utf-8')
     
     def get_all_data(self):
-        df = self.__df.copy()
+        df = self.refresh_data()
         if '_id' in df:
             df.drop('_id',axis=1,inplace=True)
         
@@ -150,9 +147,20 @@ class Agent:
             if df.loc[i, 'Type'] == 'KeyID':
                 pass
             else:
-                df.loc[i, 'PII'] = self.decrypt_data(self.filter_from_s3(df.loc[i, 'Type']))
+                df.loc[i, 'PII'] = self.decrypt_data(self.filter_from_db(df.loc[i, 'Type']))
+                # print(df.loc[i,'PII'])
         return df
     
+    def update_all_data(self,item):
+        response = self.collection.insert_one({'Category':item['Category'], 'Type':item['Type'], 'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')})
+        print(response.acknowledged)
+        return response.acknowledged
+    
+    def update_one_data(self,item):
+        response = self.collection.update_one({'Category':item['Category'], 'Type':item['Type']}, {'$set': {'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')}})
+        print(response.modified_count, response.acknowledged)
+        return response.modified_count, response.acknowledged
+
     def download_excel(self):
         df = self.get_all_data()
         df.to_excel(self.data_path, index=False)
@@ -160,22 +168,19 @@ class Agent:
         return True
     
     
-    # Function to process each PII entry
-    def process_pii(self,pii_list):
-    # You can add your processing logic here
-        for pii in pii_list:
-            print(f"Item Name: {pii['Item Name']}, Data: {pii['Data']}")
-
+    # for Desktop Application
     def get_options_to_choose(self):
         df = self.get_all_data()
         return list(set(df['Category'].to_list()))
 
+    # for Desktop Application
     def get_sub_options_to_choose(self, category):
         df = self.get_all_data()
         df = df[df['Category'] == category]
         self.chosen_one = category
         return list(set(df['Type'].to_list()))
 
+    # for Desktop Application
     def get_final_output(self,type):
         df = self.get_all_data()
         df = df[df['Category'] == self.chosen_one]
@@ -187,6 +192,8 @@ class Agent:
                 return ast.literal_eval(df['PII'].iloc[0].replace('\n', ' THIS_IS_NEW_LINE '))  
             except:
                 return df['PII'].iloc[0]
+    
+    # for Source Code
     def perform_specific_output(self):
         # Fetch all data
         df = self.get_all_data()
@@ -239,20 +246,29 @@ class Agent:
         except Exception:
                 return False
 
-    def upload_excel_to_s3(self,file_path):
+    def collect_logs(self):
         s3 = boto3.client('s3')
-        df = pd.read_excel(file_path)
+        log_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open('application.log','rb') as f:
+            s3.upload_fileobj(f, self.s3, f'application_log_{log_date}.log')
+            # os.remove('application.log')
+            return True
+        return False
+    def upload_securely(self):
+        self.refresh_data().to_csv(CONSTANTS.DATA_FILE_CSV,columns=['Type','Category','PII'])
+        s3 = boto3.client('s3')
+        df = pd.read_csv(CONSTANTS.DATA_FILE_CSV)
         for i in df.index:
             if df.loc[i, 'Type'] == 'KeyID':
                 pass
             else:
                 df.loc[i,'PII'] = base64.b64encode(self.cipher_suite.encrypt(df.loc[i,'PII'].encode('utf-8'))).decode('utf-8')
-        df.to_excel(file_path, index=False)
+        # df.to_csv(file_path, index=False)
         try:
-            with open(file_path, 'rb') as f:
-                s3.upload_fileobj(f, self.s3, self.file_name)
-                os.remove(file_path)
-                print(f"File {file_path} uploaded to S3 successfully.")
+            with open(CONSTANTS.DATA_FILE_CSV, 'rb') as f:
+                s3.upload_fileobj(f, self.s3, CONSTANTS.DATA_FILE_CSV)
+                os.remove(CONSTANTS.DATA_FILE_CSV)
+                # print(f"File {CONSTANTS.DATA_FILE_CSV} uploaded to S3 successfully.")
                 return True
         except Exception as e:
             print(f"Error uploading file to S3: {e}")
@@ -290,9 +306,7 @@ class Agent:
 if __name__ == '__main__':
     
     agent = Agent(s3=CONSTANTS.AWS_S3,file_name=CONSTANTS.AWS_FILE)
-    data = agent.get_all_data()
-    print(data)
     # agent.upload_excel_to_s3('MyPII.PIIData.xlsx')
     # agent.perform_specific_output()
-    # agent.download_excel()
+    agent.download_excel()
     # agent.begin_work()

@@ -1,25 +1,22 @@
-from fastapi import FastAPI, HTTPException,status
+from fastapi import FastAPI, HTTPException, status
 import uvicorn
 from SecureAPI import Agent
-import ast
-import CONSTANTS #type: ignore
-from pydantic import BaseModel, Field, ValidationError
+import CONSTANTS  # type: ignore
+from pydantic import BaseModel, ValidationError
 from typing import List, Dict, Any
 import pandas as pd
-import json
-
+import json,ast
 
 app = FastAPI()
 
 """
 Use the Below Command:
 http POST http://127.0.0.1:8000/pii id=1 itemName="Item" data="data" tags=["tag"] pii:=True
+http POST http://127.0.0.1:8000/pii Category="Dummy" PII="[{'Item Name':'Dummy Item Name','Data':'New Item'},{'Item Name':'Dummy Item2', 'Data':'Dummy Data'}]" Type="TypePII"
 
-
+http GET http://127.0.0.1:8000/pii
 the command is still not fully functional
-
 """
-
 
 class PIIItem(BaseModel):
     Category: str
@@ -28,6 +25,13 @@ class PIIItem(BaseModel):
 
 class PII(BaseModel):
     items: List[PIIItem]
+
+class PIIRow(BaseModel):
+    Category: str
+    PII: str
+    Type: str
+
+
 
 def convert_dataframe_to_pii_items(df: pd.DataFrame) -> List[Dict[str, Any]]:
     items = df.to_dict(orient='records')
@@ -61,11 +65,36 @@ def get_all_pii():
             detail=str(e)
         )
 
-@app.get("/pii/{category}")
+@app.get("/pii/{category}", response_model=List[PIIItem])
 def get_category_pii(category: str):
-    data = pii_data_df[pii_data_df['Category']==category]
-    return convert_dataframe_to_pii_items(data)
+    category_data = pii_data_df[pii_data_df['Category'] == category]
+    category_pii_items = convert_dataframe_to_pii_items(category_data)
+    try:
+        # Validate the converted data against the PII model
+        pii_items = [PIIItem(**item) for item in category_pii_items]
+        return pii_items
+    except ValidationError as e:
+        print("Validation Error:", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
+
+@app.post('/pii', response_model=PIIRow, status_code=status.HTTP_201_CREATED)
+def add_pii_item(item: PIIRow):
+    try:
+        # item.PII = ast.literal_eval(item.PII)
+        print('Received Data', item)
+        agent.update_all_data(item.model_dump())
+        return item
+    
+    except Exception as e:
+        print("Error adding data:", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

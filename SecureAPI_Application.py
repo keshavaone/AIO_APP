@@ -6,10 +6,10 @@ import pandas as pd
 from cryptography.fernet import Fernet
 from SecureAPI import Agent  # type: ignore
 import CONSTANTS  #type: ignore
-from pymongo import MongoClient # type: ignore
 
 # Setup logging with rotation
 from logging.handlers import RotatingFileHandler
+from PyQt5.QtWidgets import QLineEdit
 handler = RotatingFileHandler('application.log', maxBytes=1000000, backupCount=3)
 logging.basicConfig(handlers=[handler], level=logging.INFO)
 
@@ -87,44 +87,44 @@ class PIIWindow(QMainWindow):
         self.btnDisplayData.clicked.connect(self.show_data_window)
         layout.addWidget(self.btnDisplayData, alignment=Qt.AlignCenter)
 
-    def upload_pii(self):
-        try:
-            if os.path.exists('MyPII.PIIData.xlsx'):
-                pre_upload_time_stamp = time.time()
-                self.update_log(self.agent.get_current_time(), "PII Data Upload Attempted.")
+    # def upload_pii(self):
+    #     try:
+    #         if os.path.exists('MyPII.PIIData.xlsx'):
+    #             pre_upload_time_stamp = time.time()
+    #             self.update_log(self.agent.get_current_time(), "PII Data Upload Attempted.")
                 
-                # Encrypt the file before uploading
-                try:
-                    encrypted_file_path = self.encrypt_file('MyPII.PIIData.xlsx')
-                except Exception as e:
-                    error_message = f"Error encrypting file: {str(e)}"
-                    self.update_log(self.agent.get_current_time(), error_message)
-                    QMessageBox.critical(self, "Encryption Error", error_message)
-                    return
+    #             # Encrypt the file before uploading
+    #             try:
+    #                 encrypted_file_path = self.encrypt_file('MyPII.PIIData.xlsx')
+    #             except Exception as e:
+    #                 error_message = f"Error encrypting file: {str(e)}"
+    #                 self.update_log(self.agent.get_current_time(), error_message)
+    #                 QMessageBox.critical(self, "Encryption Error", error_message)
+    #                 return
                 
-                # Attempt to upload the encrypted file
-                try:
-                    response = self.agent.upload_excel_to_s3(encrypted_file_path)
-                except Exception as e:
-                    error_message = f"Error uploading file: {str(e)}"
-                    self.update_log(self.agent.get_current_time(), error_message)
-                    QMessageBox.critical(self, "Upload Error", error_message)
-                    return
+    #             # Attempt to upload the encrypted file
+    #             try:
+    #                 response = self.agent.upload_excel_to_s3(encrypted_file_path)
+    #             except Exception as e:
+    #                 error_message = f"Error uploading file: {str(e)}"
+    #                 self.update_log(self.agent.get_current_time(), error_message)
+    #                 QMessageBox.critical(self, "Upload Error", error_message)
+    #                 return
                 
-                self.update_log(self.agent.get_current_time(), "PII Data Upload Function Response: " + str(response))
-                self.update_log(self.agent.get_current_time(), f"PII Data Upload Time: {time.time() - pre_upload_time_stamp:.2f} Seconds")
+    #             self.update_log(self.agent.get_current_time(), "PII Data Upload Function Response: " + str(response))
+    #             self.update_log(self.agent.get_current_time(), f"PII Data Upload Time: {time.time() - pre_upload_time_stamp:.2f} Seconds")
                 
-                if response:
-                    QMessageBox.information(self, "Upload Complete", "Data uploaded successfully!")
-                else:
-                    QMessageBox.warning(self, "Upload Failed", "Failed to upload data!")
-            else:
-                QMessageBox.warning(self, "File Not Found", "File 'MyPII.PIIData.xlsx' not found!")
-                self.update_log(self.agent.get_current_time(), "File 'MyPII.PIIData.xlsx' not found!")
-        except Exception as e:
-            error_message = f"Unexpected error: {str(e)}"
-            self.update_log(self.agent.get_current_time(), error_message)
-            QMessageBox.critical(self, "Error", error_message)
+    #             if response:
+    #                 QMessageBox.information(self, "Upload Complete", "Data uploaded successfully!")
+    #             else:
+    #                 QMessageBox.warning(self, "Upload Failed", "Failed to upload data!")
+    #         else:
+    #             QMessageBox.warning(self, "File Not Found", "File 'MyPII.PIIData.xlsx' not found!")
+    #             self.update_log(self.agent.get_current_time(), "File 'MyPII.PIIData.xlsx' not found!")
+    #     except Exception as e:
+    #         error_message = f"Unexpected error: {str(e)}"
+    #         self.update_log(self.agent.get_current_time(), error_message)
+    #         QMessageBox.critical(self, "Error", error_message)
     
 
     def download_pii(self):
@@ -206,11 +206,11 @@ class PIIWindow(QMainWindow):
         btnDownload.clicked.connect(self.download_pii)
         layout.addWidget(btnDownload)
     
-        btnUpload = QPushButton('Upload Data', data_window)
-        btnUpload.setCursor(QCursor(Qt.PointingHandCursor))
-        btnUpload.setIcon(QIcon('upload.png'))
-        btnUpload.clicked.connect(self.upload_pii)
-        layout.addWidget(btnUpload)
+        # btnUpload = QPushButton('Upload Data', data_window)
+        # btnUpload.setCursor(QCursor(Qt.PointingHandCursor))
+        # btnUpload.setIcon(QIcon('upload.png'))
+        # btnUpload.clicked.connect(self.upload_pii)
+        # layout.addWidget(btnUpload)
     
         self.table_widget.resizeColumnsToContents()
         self.table_widget.resizeRowsToContents()
@@ -231,9 +231,14 @@ class PIIWindow(QMainWindow):
         def on_close_event(event):
             event.accept()
             self.update_log(self.agent.get_current_time(), f'Application PII Window Closed')
-            total_time = time.time() - self.pii_table_strt_time
-            self.update_log(self.agent.get_current_time(), f'Application PII Window Closed after {total_time:.2f} Seconds')
-    
+            close_event_strt_time = time.time()
+            self.agent.upload_securely()
+
+            self.update_log(self.agent.get_current_time(), f'Data Backed Up in {time.time() - close_event_strt_time:.2f} Seconds')
+            self.update_log(self.agent.get_current_time(), f'Application PII Window Closed after {time.time() - close_event_strt_time:.2f} Seconds')
+            
+            
+
         data_window.closeEvent = on_close_event
     
     def open_context_menu(self, position):
@@ -243,8 +248,85 @@ class PIIWindow(QMainWindow):
         copy_action.triggered.connect(self.copy_selected_row)
         menu.addAction(copy_action)
 
+        edit_action = QAction('Edit', self)
+        edit_action.triggered.connect(self.edit_selected_row)
+        menu.addAction(edit_action)
+
         menu.exec_(self.table_widget.viewport().mapToGlobal(position))
     
+    def edit_selected_row(self):
+        selected_items = self.table_widget.selectedItems()
+        if not selected_items:
+            return
+        
+        row = selected_items[2].row()
+        column = selected_items[2].column()
+        item = self.table_widget.item(row, column)
+        
+        if item is None:
+            return
+    
+        old_value = item.text()
+    
+        # Create and set up the dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit PII")
+        layout = QVBoxLayout()
+        text_edit = QTextEdit()
+        text_edit.setPlainText(old_value)
+        layout.addWidget(text_edit)
+    
+        # Add OK and Cancel buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        dialog.setLayout(layout)
+    
+        # Connect buttons to appropriate slots
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+    
+        # Show the dialog and handle the result
+        if dialog.exec_() == QDialog.Accepted:
+            new_value = text_edit.toPlainText()
+            item.setText(new_value)
+            try:
+                list_of_lists = [i.split(' - ') for i in new_value.split('\n')]
+                # print(list_of_lists)
+                new_value1 = ""
+                for i in list_of_lists:
+                    item_name = i[0]
+                    data = i[1]
+                    new_value1 += '{"Item Name": "'+item_name+'", "Data":"'+data+'"},'
+                final_value = "["+new_value1[:-1]+"]"
+            except:
+                final_value = new_value
+            final_item = {}
+
+            row = selected_items[0].row()
+            column = selected_items[0].column()
+            final_item["Category"] = self.table_widget.item(row, column).text()
+
+            row = selected_items[1].row()
+            column = selected_items[1].column()
+            final_item["Type"] = self.table_widget.item(row, column).text()
+            
+            final_item["PII"] = final_value
+            print(final_item)
+            self.time_updt_strt_time = time.time()
+            modified_count, response = self.agent.update_one_data(final_item)
+            self.update_log(self.agent.get_current_time(), f"Modified {modified_count} document(s)")
+            self.update_log(self.agent.get_current_time(), f"Update Time: {time.time() - self.time_updt_strt_time:.2f} Seconds")
+            self.update_log(self.agent.get_current_time(), f"Update Function Response: {response}")
+            self.update_log(self.agent.get_current_time(), f"Modifed: {final_item['Category']}'s {final_item['Type']} - PII")
+            QMessageBox.information(self, "Update Complete", f"{modified_count} document(s) updated successfully!")
+    
+        
+
+
     def copy_selected_row(self):
         selected_items = self.table_widget.selectedItems()
         if selected_items:
@@ -272,6 +354,8 @@ class PIIWindow(QMainWindow):
             QMessageBox.warning(self, "Authentication Failed", "Incorrect Password!")
             self.password_input.clear()
 
+    
+    
     def connect_to_server(self):
         self.btnConnectServer.setDisabled(True)
         self.agent = Agent(s3=CONSTANTS.AWS_S3, file_name=CONSTANTS.AWS_FILE)
@@ -319,6 +403,7 @@ class PIIWindow(QMainWindow):
             event.accept()
             end_time = time.time() - self.start_time
             self.update_log(self.agent.get_current_time(), f"{self.option}'s dialog closed after {end_time:.2f} seconds")
+            
 
         dialog = QDialog(self)
         dialog.setWindowTitle(sub_option)
@@ -435,25 +520,37 @@ class PIIWindow(QMainWindow):
         return decrypted_file_path
 
     def cleanup_on_exit(self, event):
-        try:
-            # Delete log files
-            log_files = ['application.log']
-            for log_file in log_files:
-                if os.path.exists(log_file):
-                    os.remove(log_file)
-
-            # Delete encrypted files
-            encrypted_files = [file for file in os.listdir('.') if file.endswith('.enc')]
-            for enc_file in encrypted_files:
-                os.remove(enc_file)
-
-            # Optional: You can delete any other temporary files created by your application here.
-            
+       log_files = ['application.log']
+       print('Performing Clean Up')
+       for log_file in log_files:
+        if os.path.exists(log_file):
             logging.info("Cleanup completed successfully.")
-        except Exception as e:
-            logging.error(f"Error during cleanup: {str(e)}")
-        finally:
-            event.accept()
+            self.agent.collect_logs()
+
+        # Delete encrypted files
+        # encrypted_files = [file for file in os.listdir('.') if file.endswith('.enc')]
+        # for enc_file in encrypted_files:
+        #     os.remove(enc_file)
+        # return True
+        # Optional: You can delete any other temporary files created by your application here.
+            
+        # except Exception as e:
+        #     logging.error(f"Error during cleanup: {str(e)}")
+        #     # return False
+        # finally:
+        #     event.accept()
+            # return True
+    
+    def update_item(self, item):
+        self.data_table.setCurrentItem(item, QAbstractItemView.Select)
+        self.on_data_table_selection()
+        self.data_table.setCurrentItem(None)
+        self.data_table.clearSelection()
+        self.data_table.update()
+        self.data_table.repaint()
+        self.data_table.viewport().update()
+        self.data_table.viewport().repaint()
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
