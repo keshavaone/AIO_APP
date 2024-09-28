@@ -3,7 +3,6 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 import sys, os, time, ast, logging, hashlib, base64
 import pandas as pd
-from cryptography.fernet import Fernet
 from SecureAPI import Agent  # type: ignore
 import CONSTANTS  #type: ignore
 
@@ -87,6 +86,180 @@ class PIIWindow(QMainWindow):
         self.btnDisplayData.clicked.connect(self.show_data_window)
         layout.addWidget(self.btnDisplayData, alignment=Qt.AlignCenter)
 
+
+        # Add a button for adding a new entry
+        self.btnAddEntry = QPushButton('Add New Entry', self)
+        self.btnAddEntry.setDisabled(True)
+        self.btnAddEntry.setToolTip('Button Disabled. Please Connect to Server')
+        self.btnAddEntry.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btnAddEntry.setIcon(QIcon('add.png'))
+        self.btnAddEntry.setShortcut('Ctrl+N')
+        self.btnAddEntry.setStyleSheet("background-color: gray; color: black;")
+        self.btnAddEntry.clicked.connect(self.add_new_entry)
+        layout.addWidget(self.btnAddEntry, alignment=Qt.AlignCenter)
+
+    def add_new_entry(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add New Entry")
+        main_layout = QVBoxLayout(dialog)
+    
+        # Category input
+        category_label = QLabel("Category:", dialog)
+        category_input = QLineEdit(dialog)
+        main_layout.addWidget(category_label)
+        main_layout.addWidget(category_input)
+    
+        # Type input
+        type_label = QLabel("Type:", dialog)
+        type_input = QLineEdit(dialog)
+        main_layout.addWidget(type_label)
+        main_layout.addWidget(type_input)
+    
+        # PII section
+        pii_label = QLabel("PII (JSON format):", dialog)
+        main_layout.addWidget(pii_label)
+    
+        pii_layout = QVBoxLayout()
+        pii_items = []
+    
+        def add_pii_item(default_name='', default_data=''):
+            item_layout = QHBoxLayout()
+    
+            item_name_input = QLineEdit(dialog)
+            if default_name:
+                item_name_input.setText(default_name)
+            item_data_input = QLineEdit(dialog)
+            if default_data:
+                item_data_input.setText(default_data)
+    
+            item_layout.addWidget(QLabel("Item Name:", dialog))
+            item_layout.addWidget(item_name_input)
+            item_layout.addWidget(QLabel("Data:", dialog))
+            item_layout.addWidget(item_data_input)
+    
+            remove_button = QPushButton("-", dialog)
+            remove_button.setFixedSize(20, 20)
+            remove_button.clicked.connect(lambda: remove_pii_item(item_layout, item_name_input, item_data_input))
+            item_layout.addWidget(remove_button)
+    
+            pii_layout.addLayout(item_layout)
+            pii_items.append((item_name_input, item_data_input))
+    
+        def remove_pii_item(item_layout, item_name_input, item_data_input):
+            for i in reversed(range(item_layout.count())):
+                widget = item_layout.itemAt(i).widget()
+                if widget is not None:
+                    widget.deleteLater()
+            pii_layout.removeItem(item_layout)
+            pii_items.remove((item_name_input, item_data_input))
+    
+        # Add default PII item
+        add_pii_item()
+    
+        # Button to add new PII items
+        add_button = QPushButton("+", dialog)
+        add_button.setFixedSize(20, 20)
+        add_button.clicked.connect(add_pii_item)
+        main_layout.addWidget(add_button)  # Corrected to use main_layout
+        main_layout.addLayout(pii_layout)
+    
+        # OK and Cancel buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK", dialog)
+        cancel_button = QPushButton("Cancel", dialog)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        main_layout.addLayout(button_layout)
+    
+        def get_pii_data():
+            pii_list = []
+            for name_input, data_input in pii_items:
+                name = name_input.text()
+                data = data_input.text()
+                if name and data:
+                    pii_list.append({"Item Name": name, "Data": data})
+            return pii_list
+    
+        def handle_ok():
+            self.insert_to_db(
+                dialog,
+                category_input.text(),
+                type_input.text(),
+                get_pii_data()
+            )
+            dialog.accept()  # Ensure the dialog is closed after OK clicked
+    
+        ok_button.clicked.connect(handle_ok)
+        cancel_button.clicked.connect(dialog.reject)
+    
+        dialog.exec_()
+    
+    
+    
+    
+        def remove_pii_item(item_layout, item_name_input, item_data_input):
+            for i in reversed(range(item_layout.count())):
+                widget = item_layout.itemAt(i).widget()
+                if widget is not None:
+                    widget.deleteLater()
+            pii_layout.removeItem(item_layout)
+            pii_items.remove((item_name_input, item_data_input))
+    
+        # Add default PII item
+        add_pii_item()
+    
+        # Button to add new PII items
+        add_button = QPushButton("+", dialog)
+        add_button.setFixedSize(30, 25)
+        add_button.clicked.connect(add_pii_item)
+        main_layout.addWidget(add_button)
+        main_layout.addLayout(pii_layout)
+    
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK", dialog)
+        cancel_button = QPushButton("Cancel", dialog)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        main_layout.addLayout(button_layout)
+    
+        def get_pii_data():
+            pii_list = []
+            for name_input, data_input in pii_items:
+                name = name_input.text()
+                data = data_input.text()
+                if name and data:
+                    pii_list.append({"Item Name": name, "Data": data})
+            return pii_list
+    
+        ok_button.clicked.connect(lambda: self.insert_to_db(
+            dialog,
+            category_input.text(),
+            type_input.text(),
+            get_pii_data()
+        ))
+        cancel_button.clicked.connect(dialog.reject)
+    
+        dialog.exec_()
+    
+    
+
+    def insert_to_db(self, dialog, category, type_, pii):
+        try:
+            new_entry = {
+                "Category": category,
+                "Type": type_,
+                "PII": str(pii)
+            }
+            print(new_entry)
+            response = self.agent.insert_new_data(new_entry)
+            if response:
+                QMessageBox.information(self, "Insertion Successful", "New entry has been inserted successfully!")
+                self.update_log(self.agent.get_current_time(), f"Inserted new entry: {new_entry}")
+                dialog.accept()
+            else:
+                QMessageBox.warning(self, "Insertion Failed", "Failed to insert new entry.")
+        except (ValueError, SyntaxError) as e:
+            QMessageBox.warning(self, "Invalid Input", "Please check the Error Below.\n\n"+str(e))
 
     def download_pii(self):
         self.update_log(self.agent.get_current_time(), "PII Data Download Attempted")
@@ -272,7 +445,6 @@ class PIIWindow(QMainWindow):
             final_item["Type"] = self.table_widget.item(row, column).text()
             
             final_item["PII"] = final_value
-            print(final_item)
             self.time_updt_strt_time = time.time()
             modified_count, response = self.agent.update_one_data(final_item)
             self.update_log(self.agent.get_current_time(), f"Modified {modified_count} document(s)")
@@ -321,6 +493,8 @@ class PIIWindow(QMainWindow):
         self.btnConnectServer.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setDisabled(False)
+        self.btnAddEntry.setDisabled(False)
+        self.btnAddEntry.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setToolTip('Click to download data')
         self.btnConnectServer.setToolTip('You are Connected Successfully. Button Disabled')
 
@@ -350,6 +524,7 @@ class PIIWindow(QMainWindow):
         )
         if ok_pressed and sub_option:
             output = self.agent.get_final_output(sub_option)
+            print(output)
             self.update_log(self.agent.get_current_time(), f"Selected {selected_item_text}'s sub option: {sub_option}")
             self.show_output_dialog(sub_option, output)
 
@@ -377,6 +552,7 @@ class PIIWindow(QMainWindow):
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_content.maximumSize()
         dialog.maximumSize()
+        
         for item in output:
             h_layout = QHBoxLayout()
             copy_button = QPushButton('Copy', dialog)
@@ -445,33 +621,6 @@ class PIIWindow(QMainWindow):
         self.data_table.setRowCount(len(data))
         for row, item in enumerate(data):
             self.data_table.setItem(row, 0, QTableWidgetItem(item))
-
-    def encrypt_file(self, file_path):
-        key = os.environ.get('ENCRYPTION_KEY')
-        if not key:
-            key = base64.urlsafe_b64encode(hashlib.sha256(os.urandom(32)).digest())
-            os.environ['ENCRYPTION_KEY'] = key.decode()
-        cipher_suite = Fernet(key)
-        with open(file_path, 'rb') as file:
-            file_data = file.read()
-        encrypted_data = cipher_suite.encrypt(file_data)
-        encrypted_file_path = file_path + '.enc'
-        with open(encrypted_file_path, 'wb') as file:
-            file.write(encrypted_data)
-        return encrypted_file_path
-
-    def decrypt_file(self, encrypted_file_path):
-        key = os.environ.get('ENCRYPTION_KEY')
-        if not key:
-            raise ValueError("Encryption key not found in environment variables.")
-        cipher_suite = Fernet(key)
-        with open(encrypted_file_path, 'rb') as file:
-            encrypted_data = file.read()
-        decrypted_data = cipher_suite.decrypt(encrypted_data)
-        decrypted_file_path = encrypted_file_path.replace('.enc', '')
-        with open(decrypted_file_path, 'wb') as file:
-            file.write(decrypted_data)
-        return decrypted_file_path
 
     def cleanup_on_exit(self, event):
        log_files = ['application.log']

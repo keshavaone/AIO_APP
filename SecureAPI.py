@@ -152,7 +152,10 @@ class Agent:
                 # print(df.loc[i,'PII'])
         return df
     
-    def update_all_data(self,item):
+
+
+
+    def insert_new_data(self,item):
         response = self.collection.insert_one({'Category':item['Category'], 'Type':item['Type'], 'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')})
         print(response.acknowledged)
         return response.acknowledged
