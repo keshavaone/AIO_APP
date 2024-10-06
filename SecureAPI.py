@@ -138,7 +138,9 @@ class Agent:
     
     def decrypt_data(self,item):
         return self.cipher_suite.decrypt(item).decode('utf-8')
-    
+    def logout(self):
+        del self
+        return True
     def get_all_data(self):
         df = self.refresh_data()
         # if '_id' in df:

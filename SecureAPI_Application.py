@@ -98,7 +98,15 @@ class PIIWindow(QMainWindow):
         self.btnAddEntry.setStyleSheet("background-color: gray; color: black;")
         self.btnAddEntry.clicked.connect(self.add_new_entry)
         layout.addWidget(self.btnAddEntry, alignment=Qt.AlignCenter)
-
+    def logout_user(self):
+        self.update_log(self.agent.get_current_time(),'Logging Out...')
+        self.UIComponents()
+        self.update_log(self.agent.get_current_time(),'Logged Out Successfully.')
+        self.cleanup_on_exit()
+        self.modified = False
+        self.btnLogOut.setVisible(False)
+        self.agent.logout()
+        self.agent = None
     def add_new_entry(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add New Entry")
@@ -139,7 +147,7 @@ class PIIWindow(QMainWindow):
             item_layout.addWidget(item_data_input)
     
             remove_button = QPushButton("-", dialog)
-            remove_button.setFixedSize(30, 20)
+            remove_button.setFixedSize(35, 25)
             remove_button.clicked.connect(lambda: remove_pii_item(item_layout, item_name_input, item_data_input))
             item_layout.addWidget(remove_button)
 
@@ -507,7 +515,19 @@ class PIIWindow(QMainWindow):
         self.btnAddEntry.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setToolTip('Click to download data')
         self.btnConnectServer.setToolTip('You are Connected Successfully. Button Disabled')
-
+        self.btnLogOut = QPushButton('LogOut', self)
+        self.btnLogOut.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btnLogOut.clicked.connect(self.logout_user)
+        self.btnLogOut.setShortcut("Ctrl+W")
+        self.btnLogOut.resize(100, 40)
+        self.btnLogOut.show()
+        self.btnLogOut.setStyleSheet("background-color: orange; color: white;")
+        self.btnLogOut.setDisabled(False)
+        self.btnLogOut.setToolTip('Click to Logout')
+        # position the logout to right side corner in the Top Right Corner
+        self.btnLogOut.move(self.width() - self.btnLogOut.width() - 10, 10)
+        self.btnConnectServer.move(self.width() - self.btnConnectServer.width() - 10, 10)
+        self.btnDisplayData.move(self.width() - self.btnDisplayData.width() - 10, 10)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.fetch_status)
         self.timer.start(1000)
@@ -632,16 +652,16 @@ class PIIWindow(QMainWindow):
         for row, item in enumerate(data):
             self.data_table.setItem(row, 0, QTableWidgetItem(item))
 
-    def cleanup_on_exit(self, event):
+    def cleanup_on_exit(self, event=None):
        log_files = ['application.log']
-       print('Processing Logs....',end='')
        for log_file in log_files:
         if os.path.exists(log_file):
             try:
                 self.update_log(self.agent.get_current_time(), f"Processing Logging Data...")
-                logging.info("Processing Logging Data")
+                pre_log_time = time.time()
                 self.agent.collect_logs()
                 print('Done')
+                self.update_log(self.agent.get_current_time(), f"Log Data Backedup in {time.time() - pre_log_time:.2f} Seconds")
             except AttributeError:
                 logging.info("EVNT_FLRE: Closed the Application without Login.")
                 print('Done')
