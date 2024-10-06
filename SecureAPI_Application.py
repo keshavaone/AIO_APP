@@ -46,6 +46,7 @@ class PIIWindow(QMainWindow):
         layout.addWidget(welcome_text, alignment=Qt.AlignCenter)
 
         self.btnConnectServer = QPushButton('Connect to Server', self)
+        # self.btnConnectServer.setVisible(False)
         self.btnConnectServer.setToolTip('Click to connect to the server')
         self.btnConnectServer.setCursor(QCursor(Qt.PointingHandCursor))
         self.btnConnectServer.setIcon(QIcon('connect.png'))
@@ -116,7 +117,7 @@ class PIIWindow(QMainWindow):
         main_layout.addWidget(type_input)
     
         # PII section
-        pii_label = QLabel("PII (JSON format):", dialog)
+        pii_label = QLabel("PII:", dialog)
         main_layout.addWidget(pii_label)
     
         pii_layout = QVBoxLayout()
@@ -138,10 +139,15 @@ class PIIWindow(QMainWindow):
             item_layout.addWidget(item_data_input)
     
             remove_button = QPushButton("-", dialog)
-            remove_button.setFixedSize(20, 20)
+            remove_button.setFixedSize(30, 20)
             remove_button.clicked.connect(lambda: remove_pii_item(item_layout, item_name_input, item_data_input))
             item_layout.addWidget(remove_button)
-    
+
+            # Increase the font size for better visibility
+            font = remove_button.font()
+            font.setPointSize(5)  # Adjust the font size as needed
+            remove_button.setFont(font)
+
             pii_layout.addLayout(item_layout)
             pii_items.append((item_name_input, item_data_input))
     
@@ -158,10 +164,17 @@ class PIIWindow(QMainWindow):
     
         # Button to add new PII items
         add_button = QPushButton("+", dialog)
-        add_button.setFixedSize(20, 20)
+        add_button.setFixedSize(35, 30)
+        
+        # Increase the font size for better visibility
+        font = add_button.font()
+        font.setPointSize(5)  # Adjust the font size as needed
+        add_button.setFont(font)
+        
         add_button.clicked.connect(add_pii_item)
         main_layout.addWidget(add_button)  # Corrected to use main_layout
         main_layout.addLayout(pii_layout)
+        
     
         # OK and Cancel buttons
         button_layout = QHBoxLayout()
@@ -181,20 +194,39 @@ class PIIWindow(QMainWindow):
             return pii_list
     
         def handle_ok():
-            self.insert_to_db(
-                dialog,
-                category_input.text(),
-                type_input.text(),
-                get_pii_data()
-            )
-            dialog.accept()  # Ensure the dialog is closed after OK clicked
+            category = category_input.text().strip()
+            type_ = type_input.text().strip()
+            pii_data = get_pii_data()
+    
+            error_messages = []
+            
+            if not category:
+                error_messages.append("Category is required.")
+            if not type_:
+                error_messages.append("Type is required.")
+            for i, (name_input, data_input) in enumerate(pii_items):
+                name = name_input.text().strip()
+                data = data_input.text().strip()
+                if not name or not data:
+                    error_messages.append(f"PII Item {i+1} requires both 'Item Name' and 'Data'.")
+    
+            if error_messages:
+                QMessageBox.warning(dialog, "Validation Errors", "\n".join(error_messages))
+            else:
+                self.insert_to_db(
+                    dialog,
+                    category,
+                    type_,
+                    pii_data
+                )
+                dialog.accept()  # Ensure the dialog is closed after OK clicked
+                
+                
     
         ok_button.clicked.connect(handle_ok)
         cancel_button.clicked.connect(dialog.reject)
-    
+
         dialog.exec_()
-    
-    
     
     
         def remove_pii_item(item_layout, item_name_input, item_data_input):
@@ -205,41 +237,6 @@ class PIIWindow(QMainWindow):
             pii_layout.removeItem(item_layout)
             pii_items.remove((item_name_input, item_data_input))
     
-        # Add default PII item
-        add_pii_item()
-    
-        # Button to add new PII items
-        add_button = QPushButton("+", dialog)
-        add_button.setFixedSize(30, 25)
-        add_button.clicked.connect(add_pii_item)
-        main_layout.addWidget(add_button)
-        main_layout.addLayout(pii_layout)
-    
-        button_layout = QHBoxLayout()
-        ok_button = QPushButton("OK", dialog)
-        cancel_button = QPushButton("Cancel", dialog)
-        button_layout.addWidget(ok_button)
-        button_layout.addWidget(cancel_button)
-        main_layout.addLayout(button_layout)
-    
-        def get_pii_data():
-            pii_list = []
-            for name_input, data_input in pii_items:
-                name = name_input.text()
-                data = data_input.text()
-                if name and data:
-                    pii_list.append({"Item Name": name, "Data": data})
-            return pii_list
-    
-        ok_button.clicked.connect(lambda: self.insert_to_db(
-            dialog,
-            category_input.text(),
-            type_input.text(),
-            get_pii_data()
-        ))
-        cancel_button.clicked.connect(dialog.reject)
-    
-        dialog.exec_()
     
     
 
@@ -256,6 +253,8 @@ class PIIWindow(QMainWindow):
                 QMessageBox.information(self, "Insertion Successful", "New entry has been inserted successfully!")
                 self.update_log(self.agent.get_current_time(), f"Inserted new entry: {new_entry}")
                 dialog.accept()
+                data = self.agent.get_options_to_choose()
+                self.populate_data_table(data)
             else:
                 QMessageBox.warning(self, "Insertion Failed", "Failed to insert new entry.")
         except (ValueError, SyntaxError) as e:
@@ -297,6 +296,7 @@ class PIIWindow(QMainWindow):
     
         data_frame = self.agent.get_all_data()
         self.data_frame = data_frame.copy()  # Store data frame locally for later use
+        data_frame.drop('_id',axis=1,inplace=True)
         self.update_log(self.agent.get_current_time(), 'PII Data Displaying...')
     
         # Set DataFrame data to QTableWidget
@@ -363,6 +363,11 @@ class PIIWindow(QMainWindow):
             if self.modified:
                 self.update_log(self.agent.get_current_time(), f'Data Backup Initiated...')
                 self.agent.upload_securely()
+                self.update_log(self.agent.get_current_time(), f'Refreshing Data...')
+                refresh_time = time.time()
+                data = self.agent.get_options_to_choose()
+                self.update_log(self.agent.get_current_time(), f'Data Refreshed in {time.time() - refresh_time:.2f} Seconds')
+                self.populate_data_table(data)
                 self.update_log(self.agent.get_current_time(), f'Data Backed Up in {time.time() - close_event_strt_time:.2f} Seconds')
             close_event_time = close_event_strt_time - self.pii_table_strt_time
             self.update_log(self.agent.get_current_time(), f'Application PII Window Closed after {close_event_time:.2f} Seconds')
@@ -381,6 +386,10 @@ class PIIWindow(QMainWindow):
         edit_action = QAction('Edit', self)
         edit_action.triggered.connect(self.edit_selected_row)
         menu.addAction(edit_action)
+
+        delete_action = QAction('Delete', self)
+        delete_action.triggered.connect(self.delete_item)
+        menu.addAction(delete_action)
 
         menu.exec_(self.table_widget.viewport().mapToGlobal(position))
     
@@ -445,6 +454,7 @@ class PIIWindow(QMainWindow):
             final_item["Type"] = self.table_widget.item(row, column).text()
             
             final_item["PII"] = final_value
+            print(final_item)
             self.time_updt_strt_time = time.time()
             modified_count, response = self.agent.update_one_data(final_item)
             self.update_log(self.agent.get_current_time(), f"Modified {modified_count} document(s)")
@@ -505,6 +515,7 @@ class PIIWindow(QMainWindow):
         self.populate_data_table(data)
         self.update_log(self.agent.get_current_time(), "Connected to Server.")
         self.update_log(self.agent.get_current_time(), 'Display Data Button: Activated')
+        self.update_log(self.agent.get_current_time(), 'Add New Entry Button: Activated')
 
     def on_data_table_selection(self):
         selected_items = self.data_table.selectedItems()
@@ -524,7 +535,6 @@ class PIIWindow(QMainWindow):
         )
         if ok_pressed and sub_option:
             output = self.agent.get_final_output(sub_option)
-            print(output)
             self.update_log(self.agent.get_current_time(), f"Selected {selected_item_text}'s sub option: {sub_option}")
             self.show_output_dialog(sub_option, output)
 
@@ -624,12 +634,17 @@ class PIIWindow(QMainWindow):
 
     def cleanup_on_exit(self, event):
        log_files = ['application.log']
-       print('Performing Clean Up')
+       print('Processing Logs....',end='')
        for log_file in log_files:
         if os.path.exists(log_file):
-            self.update_log(self.agent.get_current_time(), f"Processing Logging Data...")
-            logging.info("Processing Logging Data")
-            self.agent.collect_logs()
+            try:
+                self.update_log(self.agent.get_current_time(), f"Processing Logging Data...")
+                logging.info("Processing Logging Data")
+                self.agent.collect_logs()
+                print('Done')
+            except AttributeError:
+                logging.info("EVNT_FLRE: Closed the Application without Login.")
+                print('Done')
     
     def update_item(self, item):
         self.data_table.setCurrentItem(item, QAbstractItemView.Select)
@@ -640,6 +655,50 @@ class PIIWindow(QMainWindow):
         self.data_table.repaint()
         self.data_table.viewport().update()
         self.data_table.viewport().repaint()
+    
+    def delete_item(self):
+        selected_items = self.table_widget.selectedItems()
+        
+        if not selected_items:
+            QMessageBox.warning(self, "Delete Error", "No item selected to delete.")
+            return
+        
+        # Assuming the table has columns 'Category' and 'Type'
+        item_info = {'Category': '', 'Type': ''}
+        row = selected_items[0].row()
+    
+        for column in range(2):  # Assuming that Category is column 0 and Type is column 1
+            item = self.table_widget.item(row, column)
+            if item is None:
+                QMessageBox.warning(self, "Delete Error", "Selected item has missing columns.")
+                return
+            if column == 0:
+                item_info['Category'] = item.text()
+            elif column == 1:
+                item_info['Type'] = item.text()
+    
+        print(item_info)
+    
+        # Confirm deletion with the user
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete the item '{item_info['Category']}' with type '{item_info['Type']}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+    
+        if reply == QMessageBox.Yes:
+            self.modified = True
+            response = self.agent.delete_one_data(item_info)
+            # response = True
+            if response:
+                QMessageBox.information(self, "Delete Complete", "Item deleted successfully!")
+                self.update_log(self.agent.get_current_time(), f"Deleted Item: {item_info['Category']} - {item_info['Type']}")
+                self.table_widget.removeRow(row)
+            else:
+                QMessageBox.warning(self, "Delete Error", "Failed to delete the item.")
+                self.update_log(self.agent.get_current_time(), "Failed to delete the item.")
 
 
 if __name__ == '__main__':

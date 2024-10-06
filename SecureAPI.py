@@ -141,9 +141,8 @@ class Agent:
     
     def get_all_data(self):
         df = self.refresh_data()
-        if '_id' in df:
-            df.drop('_id',axis=1,inplace=True)
-        
+        # if '_id' in df:
+        #     df.drop('_id',axis=1,inplace=True)
         for i in df.index:
             if df.loc[i, 'Type'] == 'KeyID':
                 pass
@@ -164,6 +163,11 @@ class Agent:
         response = self.collection.update_one({'Category':item['Category'], 'Type':item['Type']}, {'$set': {'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')}})
         print(response.modified_count, response.acknowledged)
         return response.modified_count, response.acknowledged
+    
+    def delete_one_data(self,item):
+        response = self.collection.delete_one({'Category':item['Category'], 'Type':item['Type']})
+        print(response.deleted_count, response.acknowledged)
+        return response.deleted_count, response.acknowledged
 
     def download_excel(self):
         df = self.get_all_data()
