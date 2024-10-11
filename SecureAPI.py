@@ -157,10 +157,12 @@ class Agent:
 
 
     def insert_new_data(self,item):
-        response = self.collection.insert_one({'Category':item['Category'], 'Type':item['Type'], 'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')})
-        print(response.acknowledged)
-        return response.acknowledged
-    
+        try:
+            response = self.collection.insert_one({'Category':item['Category'], 'Type':item['Type'], 'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')})
+            return response.acknowledged
+        except Exception as e:
+            print(e)
+            return e
     def update_one_data(self,item):
         response = self.collection.update_one({'Category':item['Category'], 'Type':item['Type']}, {'$set': {'PII': base64.b64encode(self.cipher_suite.encrypt(item['PII'].encode('utf-8'))).decode('utf-8')}})
         print(response.modified_count, response.acknowledged)

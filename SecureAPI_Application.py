@@ -41,9 +41,10 @@ class PIIWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        welcome_text = QLabel(f"Welcome to PII Application: {os.getlogin()}", central_widget)
-        welcome_text.setStyleSheet("font-size: 15px; font-weight: bold;")
-        layout.addWidget(welcome_text, alignment=Qt.AlignCenter)
+        self.welcome_text = QLabel(f"Welcome to PII Application: {os.getlogin()}", central_widget)
+        self.welcome_text.setStyleSheet("font-size: 15px; font-weight: bold;")
+        self.welcome_text.setVisible(False)
+        layout.addWidget(self.welcome_text, alignment=Qt.AlignCenter)
 
 
         self.btnConnectServer = self.setButton('Connect to Server', 'Click to connect to server', 'Ctrl+Q', self.show_password_input, visibleTrue=True)
@@ -84,6 +85,7 @@ class PIIWindow(QMainWindow):
     def setTable(self, columncount,hlabels):
         table = QTableWidget(self)
         table.setColumnCount(columncount)
+        table.setVisible(False)
         table.setHorizontalHeaderLabels(hlabels)
         table.horizontalHeader().setStretchLastSection(True)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -504,6 +506,9 @@ class PIIWindow(QMainWindow):
         self.btnDisplayData.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setVisible(True)
         self.btnAddEntry.setVisible(True)
+        self.log_table.setVisible(True)
+        self.welcome_text.setVisible(True)
+        self.data_table.setVisible(True)
         self.btnAddEntry.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setToolTip('Click to download data')
         self.btnConnectServer.setToolTip('You are Connected Successfully. Button Disabled')
