@@ -45,13 +45,8 @@ class PIIWindow(QMainWindow):
         welcome_text.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(welcome_text, alignment=Qt.AlignCenter)
 
-        self.btnConnectServer = QPushButton('Login', self)
-        # self.btnConnectServer.setVisible(False)
-        self.btnConnectServer.setToolTip('Click to login')
-        self.btnConnectServer.setCursor(QCursor(Qt.PointingHandCursor))
-        self.btnConnectServer.setIcon(QIcon('connect.png'))
-        self.btnConnectServer.setShortcut('Ctrl+Q')
-        self.btnConnectServer.clicked.connect(self.show_password_input)
+
+        self.btnConnectServer = self.setButton('Connect to Server', 'Click to connect to server', 'Ctrl+Q', self.show_password_input, visibleTrue=True)
         layout.addWidget(self.btnConnectServer, alignment=Qt.AlignCenter)
 
         self.password_input = QLineEdit(self)
@@ -60,44 +55,41 @@ class PIIWindow(QMainWindow):
         self.password_input.setHidden(True)
         layout.addWidget(self.password_input)
 
-        self.data_table = QTableWidget(self)
-        self.data_table.setColumnCount(1)
-        self.data_table.setHorizontalHeaderLabels(['Item Name'])
-        self.data_table.horizontalHeader().setStretchLastSection(True)
-        self.data_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        self.data_table = self.setTable(columncount=1, hlabels=['Item Name'])
         self.data_table.itemSelectionChanged.connect(self.on_data_table_selection)
-        self.data_table.setAlternatingRowColors(True)
         layout.addWidget(self.data_table)
 
-        self.log_table = QTableWidget(self)
-        self.log_table.setColumnCount(2)
-        self.log_table.setHorizontalHeaderLabels(['Timestamp', 'Action/Task Performed'])
-        self.log_table.horizontalHeader().setStretchLastSection(True)
-        self.log_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.log_table.setAlternatingRowColors(True)
+        self.log_table = self.setTable(columncount=2,hlabels=['Timestamp', 'Action/Task Performed'])
         layout.addWidget(self.log_table)
 
-        self.btnDisplayData = QPushButton('Display Data', self)
-        self.btnDisplayData.setDisabled(True)
-        self.btnDisplayData.setToolTip('Button Disabled. Please Connect to Server')
-        self.btnDisplayData.setCursor(QCursor(Qt.PointingHandCursor))
-        self.btnDisplayData.setIcon(QIcon('download.png'))
-        self.btnDisplayData.setShortcut('Ctrl+S')
-        self.btnDisplayData.setStyleSheet("background-color: gray; color: black;")
-        self.btnDisplayData.clicked.connect(self.show_data_window)
+        self.btnDisplayData = self.setButton('Display Data', 'Click to display data', 'Ctrl+D', self.show_data_window,style="background-color: gray; color: black;")
         layout.addWidget(self.btnDisplayData, alignment=Qt.AlignCenter)
 
-
         # Add a button for adding a new entry
-        self.btnAddEntry = QPushButton('Add New Entry', self)
-        self.btnAddEntry.setDisabled(True)
-        self.btnAddEntry.setToolTip('Button Disabled. Please Connect to Server')
-        self.btnAddEntry.setCursor(QCursor(Qt.PointingHandCursor))
-        self.btnAddEntry.setIcon(QIcon('add.png'))
-        self.btnAddEntry.setShortcut('Ctrl+N')
-        self.btnAddEntry.setStyleSheet("background-color: gray; color: black;")
-        self.btnAddEntry.clicked.connect(self.add_new_entry)
+        self.btnAddEntry = self.setButton('Add New Entry', 'Click to add a new entry', 'Ctrl+N', self.add_new_entry)
         layout.addWidget(self.btnAddEntry, alignment=Qt.AlignCenter)
+    
+    def setButton(self,btnName,tooltip,shortcut,connect,visibleTrue=False,style="background-color: green; color: white;"):
+        btn = QPushButton(btnName, self)
+        btn.setVisible(visibleTrue)
+        btn.setToolTip(tooltip)
+        btn.setCursor(QCursor(Qt.PointingHandCursor))
+        btn.setIcon(QIcon(f'{btnName.lower()}.png'))
+        btn.setStyleSheet(style)
+        btn.setShortcut(shortcut)
+        btn.clicked.connect(connect)
+        return btn
+    
+    def setTable(self, columncount,hlabels):
+        table = QTableWidget(self)
+        table.setColumnCount(columncount)
+        table.setHorizontalHeaderLabels(hlabels)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setAlternatingRowColors(True)
+        return table
+    
     def logout_user(self):
         self.update_log(self.agent.get_current_time(),'Logging Out...')
         self.UIComponents()
@@ -510,8 +502,8 @@ class PIIWindow(QMainWindow):
         self.btnConnectServer.setDisabled(True)
         self.btnConnectServer.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setStyleSheet("background-color: green; color: white;")
-        self.btnDisplayData.setDisabled(False)
-        self.btnAddEntry.setDisabled(False)
+        self.btnDisplayData.setVisible(True)
+        self.btnAddEntry.setVisible(True)
         self.btnAddEntry.setStyleSheet("background-color: green; color: white;")
         self.btnDisplayData.setToolTip('Click to download data')
         self.btnConnectServer.setToolTip('You are Connected Successfully. Button Disabled')
