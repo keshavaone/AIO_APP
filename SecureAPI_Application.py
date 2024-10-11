@@ -45,9 +45,9 @@ class PIIWindow(QMainWindow):
         welcome_text.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(welcome_text, alignment=Qt.AlignCenter)
 
-        self.btnConnectServer = QPushButton('Connect to Server', self)
+        self.btnConnectServer = QPushButton('Login', self)
         # self.btnConnectServer.setVisible(False)
-        self.btnConnectServer.setToolTip('Click to connect to the server')
+        self.btnConnectServer.setToolTip('Click to login')
         self.btnConnectServer.setCursor(QCursor(Qt.PointingHandCursor))
         self.btnConnectServer.setIcon(QIcon('connect.png'))
         self.btnConnectServer.setShortcut('Ctrl+Q')
@@ -280,7 +280,7 @@ class PIIWindow(QMainWindow):
             QMessageBox.warning(self, "Download Failed", "Failed to download data!")
 
     def show_password_input(self):
-        self.btnConnectServer.setText('Connecting...')
+        self.btnConnectServer.setText('Authenticating...')
         self.btnConnectServer.setDisabled(True)
         self.btnConnectServer.setStyleSheet("background-color: gray; color: white;")
         self.password_input.setHidden(False)  # Make the password input visible
@@ -483,7 +483,7 @@ class PIIWindow(QMainWindow):
     def authenticate_and_connect(self):
         password = self.password_input.text()
         env_password = CONSTANTS.APP_PASSWORD
-
+        self.btnConnectServer.setText('Logging in...')
         if not env_password:
             QMessageBox.warning(self, "Security Warning", "Please Activate your Secure Environment before performing operations")
             return 
