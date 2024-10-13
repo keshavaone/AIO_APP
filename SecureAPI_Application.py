@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
-import sys, os, time, ast, logging, hashlib, base64
+import sys, os, time, ast, logging, hashlib, base64, subprocess,json
 import pandas as pd
 from SecureAPI import Agent  # type: ignore
 import CONSTANTS  #type: ignore
@@ -215,6 +215,7 @@ class PIIWindow(QMainWindow):
             if error_messages:
                 QMessageBox.warning(dialog, "Validation Errors", "\n".join(error_messages))
             else:
+                
                 self.insert_to_db(
                     dialog,
                     category,
@@ -249,16 +250,16 @@ class PIIWindow(QMainWindow):
                 "Type": type_,
                 "PII": str(pii)
             }
-            print(new_entry)
-            response = self.agent.insert_new_data(new_entry)
-            if response:
+            insertion = f'http POST http://127.0.0.1:8000/pii Category="{category}" PII="{pii}" Type="{type_}"'
+            response = json.loads(subprocess.check_output(insertion).decode('ascii'))
+            if response["response"]:
                 QMessageBox.information(self, "Insertion Successful", "New entry has been inserted successfully!")
                 self.update_log(self.agent.get_current_time(), f"Inserted new entry: {new_entry}")
                 dialog.accept()
                 data = self.agent.get_options_to_choose()
                 self.populate_data_table(data)
             else:
-                QMessageBox.warning(self, "Insertion Failed", "Failed to insert new entry.")
+                QMessageBox.warning(self, "Insertion Failed", f"Failed to insert new entry.\n{response}")
         except (ValueError, SyntaxError) as e:
             QMessageBox.warning(self, "Invalid Input", "Please check the Error Below.\n\n"+str(e))
 
@@ -296,9 +297,12 @@ class PIIWindow(QMainWindow):
         self.table_widget = QTableWidget()
         layout.addWidget(self.table_widget)
     
-        data_frame = self.agent.get_all_data()
-        self.data_frame = data_frame.copy()  # Store data frame locally for later use
-        data_frame.drop('_id',axis=1,inplace=True)
+        # data_frame = self.agent.get_all_data()
+        # self.data_frame = data_frame.copy()  # Store data frame locally for later use
+        # data_frame.drop('_id',axis=1,inplace=True)
+        view = f'http GET http://127.0.0.1:8000/pii'
+        data_frame = json.loads(subprocess.check_output(view).decode('ascii'))
+        data_frame = pd.DataFrame(data_frame)
         self.update_log(self.agent.get_current_time(), 'PII Data Displaying...')
     
         # Set DataFrame data to QTableWidget
@@ -413,9 +417,33 @@ class PIIWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Edit PII")
         layout = QVBoxLayout()
-        text_edit = QTextEdit()
-        text_edit.setPlainText(old_value)
-        layout.addWidget(text_edit)
+    
+        # Process old_value into multiple item name-data pairs
+        list_of_pairs = []
+        for pair in old_value.split('\n'):
+            parts = pair.split(' - ', 1)
+            if len(parts) == 2:
+                list_of_pairs.append(parts)
+            elif len(parts) == 1:
+                list_of_pairs.append([parts[0], ""])  # Handle case where there's no ' - '
+    
+        # Create input fields for each pair with side-by-side layout
+        edits = []
+        for item_name, data in list_of_pairs:
+            hbox = QHBoxLayout()
+            
+            item_name_label = QLabel("Item Name:")
+            item_name_edit = QLineEdit(item_name)
+            hbox.addWidget(item_name_label)
+            hbox.addWidget(item_name_edit)
+    
+            data_label = QLabel("Data:")
+            data_edit = QLineEdit(data)
+            hbox.addWidget(data_label)
+            hbox.addWidget(data_edit)
+    
+            layout.addLayout(hbox)
+            edits.append((item_name_edit, data_edit))
     
         # Add OK and Cancel buttons
         button_layout = QHBoxLayout()
@@ -432,42 +460,51 @@ class PIIWindow(QMainWindow):
     
         # Show the dialog and handle the result
         if dialog.exec_() == QDialog.Accepted:
-            new_value = text_edit.toPlainText()
+            new_values = []
+            for item_name_edit, data_edit in edits:
+                new_item_name = item_name_edit.text()
+                new_data = data_edit.text()
+                new_values.append(f"{new_item_name} - {new_data}")
+            
+            new_value = '\n'.join(new_values)
             item.setText(new_value)
-            try:
-                list_of_lists = [i.split(' - ') for i in new_value.split('\n')]
-                # print(list_of_lists)
-                new_value1 = ""
-                for i in list_of_lists:
-                    item_name = i[0]
-                    data = i[1]
-                    new_value1 += '{"Item Name": "'+item_name+'", "Data":"'+data+'"},'
-                final_value = "["+new_value1[:-1]+"]"
-            except:
-                final_value = new_value
+    
+            # Convert edited entries into JSON format
+            final_value_list = [{"Item Name": item_name_edit.text(), "Data": data_edit.text()} for item_name_edit, data_edit in edits]
+            final_value = json.dumps(final_value_list)
+    
             final_item = {}
-
+    
             row = selected_items[0].row()
             column = selected_items[0].column()
             final_item["Category"] = self.table_widget.item(row, column).text()
-
+    
             row = selected_items[1].row()
             column = selected_items[1].column()
             final_item["Type"] = self.table_widget.item(row, column).text()
             
             final_item["PII"] = final_value
             print(final_item)
+            pii = final_item['PII']
+            type_ = final_item['Type']
+            category = final_item['Category']
             self.time_updt_strt_time = time.time()
-            modified_count, response = self.agent.update_one_data(final_item)
-            self.update_log(self.agent.get_current_time(), f"Modified {modified_count} document(s)")
-            self.update_log(self.agent.get_current_time(), f"Update Time: {time.time() - self.time_updt_strt_time:.2f} Seconds")
-            self.update_log(self.agent.get_current_time(), f"Update Function Response: {response}")
-            self.update_log(self.agent.get_current_time(), f"Modifed: {final_item['Category']}'s {final_item['Type']} - PII")
-            self.modified = True
-            QMessageBox.information(self, "Update Complete", f"{modified_count} document(s) updated successfully!")
-        
-
-
+            pii = pii.replace('"', "\'")
+            updation = f'http PATCH http://127.0.0.1:8000/pii Category="{category}" PII="{pii}" Type="{type_}"'
+            try:
+                response = json.loads(subprocess.check_output(updation, shell=True).decode('ascii'))
+                if response.get("response"):
+                    self.update_log(self.agent.get_current_time(), f"Update Time: {time.time() - self.time_updt_strt_time:.2f} Seconds")
+                    self.update_log(self.agent.get_current_time(), f"Update Function Response: {response}")
+                    self.update_log(self.agent.get_current_time(), f"Modified: {final_item['Category']}'s {final_item['Type']} - PII")
+                    self.modified = True
+                    QMessageBox.information(self, "Update Successful", "Data updated successfully!")
+                else:
+                    QMessageBox.warning(self, "Update Failed", f"Failed to update data!\n{response}")
+            except subprocess.CalledProcessError as e:
+                QMessageBox.critical(self, "Error", f"An error occurred while updating: {e}")
+    
+    
     def copy_selected_row(self):
         selected_items = self.table_widget.selectedItems()
         if selected_items:
@@ -694,23 +731,22 @@ class PIIWindow(QMainWindow):
             elif column == 1:
                 item_info['Type'] = item.text()
     
-        print(item_info)
-    
         # Confirm deletion with the user
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
-            f"Are you sure you want to delete the item '{item_info['Category']}' with type '{item_info['Type']}'?",
+            f"Are you sure you want to delete the item '{item_info['Category']}' with type '{item_info['Type']}'?\n\nNote: This Action is Irreversible!",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
     
         if reply == QMessageBox.Yes:
             self.modified = True
-            response = self.agent.delete_one_data(item_info)
-            # response = True
-            if response:
-                QMessageBox.information(self, "Delete Complete", "Item deleted successfully!")
+            # response = self.agent.delete_one_data(item_info)
+            deletion = f'http DELETE http://127.0.0.1:8000/pii Category="{item_info["Category"]}" Type="{item_info["Type"]}"'
+            response = json.loads(subprocess.check_output(deletion).decode('ascii'))
+            if response['response']:
+                QMessageBox.information(self, "Deletion Complete", "Item deleted successfully!")
                 self.update_log(self.agent.get_current_time(), f"Deleted Item: {item_info['Category']} - {item_info['Type']}")
                 self.table_widget.removeRow(row)
             else:

@@ -44,7 +44,7 @@ def process_data(item,operation):
                 raise ValueError("Invalid operation")
         
         if response:
-            return {"message": f"PII data {operation}ed successfully"}
+            return {"message": f"PII data {operation}ed successfully","response":response}
         else:
             return {"message": f"Failed to {operation} PII data. Reason: {response}"}
     except ValidationError as e:
@@ -53,24 +53,23 @@ def process_data(item,operation):
 #1. API for CREATE
 @app.post("/pii")
 def insert_pii_item(item: Dict[str, Any]):
-    process_data(item, 'insert')
+    return process_data(item, 'insert')
 
 
 @app.patch("/pii")
 def update_pii_item(item: Dict[str, Any]):
-    process_data(item, 'update')
+    return process_data(item, 'update')
 
 
 @app.delete("/pii")
 def delete_pii_item(item: Dict[str, Any]):
-    process_data(item, 'delete')
+    return process_data(item, 'delete')
 
 @app.get("/pii")
 def get_pii_data():
     data = agent.get_all_data()
     data.drop('_id',axis=1,inplace=True)
     data = data.to_dict(orient='records')
-    # Return the response as JSON
     return JSONResponse(content=data)
 
 
