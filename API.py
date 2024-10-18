@@ -31,7 +31,25 @@ agent = Agent(s3=s3, file_name=file_name)
  5. API for Backups.
  """
 
+# Define a global variable to keep track of total API calls
+global totalAPICalls
+totalAPICalls = 0
+
+def gather_logs(func):
+    def wrapper(*args, **kwargs):
+        global totalAPICalls  # Declare totalAPICalls as global to modify its value
+        try:
+            totalAPICalls += 1  # Increment the global totalAPICalls
+            print(f"Total API Calls: {totalAPICalls}")
+            result = func(*args, **kwargs)  # Call the original function
+            return result  # Return the result of the function call
+        except Exception as e:
+            raise e  # Raise any exceptions encountered
+    return wrapper  # Return the wrapper function
+
+@gather_logs
 def process_data(item,operation):
+    
     try:
         match operation:
             case 'insert':
@@ -65,12 +83,14 @@ def update_pii_item(item: Dict[str, Any]):
 def delete_pii_item(item: Dict[str, Any]):
     return process_data(item, 'delete')
 
+@gather_logs
 @app.get("/pii")
 def get_pii_data():
+    print(f"Total API Calls: {totalAPICalls}")
     data = agent.get_all_data()
     data.drop('_id',axis=1,inplace=True)
     data = data.to_dict(orient='records')
-    return JSONResponse(content=data)
+    return data
 
 
 if __name__ == "__main__":

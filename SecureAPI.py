@@ -8,7 +8,6 @@ import ast, datetime
 import CONSTANTS
 from pymongo import MongoClient # type: ignore
 from pymongo.server_api import ServerApi # type: ignore
-import threading
 
 @dataclass(eq=False, repr=False, order=False)
 class Agent:
@@ -20,14 +19,10 @@ class Agent:
     stored_file_names:list[str] = field(default_factory=list)
     
 
-    def get_current_time(self):
-        return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
 
     def __post_init__(self):
-        self.status = {'Waking Up Mr.Agent...': self.get_current_time()}
-        print('INIT - Waking Up Mr.Agent...',end='\r')
-        
+        self.status = {'Waking Up Mr.Agent...'}
         # Create a MongoClient to the running MongoDB instance
         client = MongoClient('mongodb://localhost:27017/',server_api=ServerApi('1'))
 
@@ -41,7 +36,7 @@ class Agent:
         aws_key = os.getenv('AWS_KEY')
         assert aws_key != None
         self.__key_id = aws_key
-        self.status['Agent Ready'] = self.get_current_time()
+        # self.status['Agent Ready'] = self.get_current_time()
         self.fetch_my_key()
         # self.process_file(mode='w',data='Success',file_path='status.txt')
         atexit.register(self.end_work)
@@ -54,13 +49,13 @@ class Agent:
         self.cipher_suite = Fernet(base64.urlsafe_b64encode(self.__key))
 
     def fetch_my_key(self):
-        self.status['Agent Requested to Perform Connection to Cloud...'] = self.get_current_time()
+        # self.status['Agent Requested to Perform Connection to Cloud...'] = self.get_current_time()
         # self.__df = self.read_excel_from_s3(self.s3,self.file_name)
         data = self.collection.find()
         df = pd.DataFrame(data)
         self.__df = df.drop('_id',axis=1)
         grouped = self.__df.groupby('Category')['Type'].apply(list).reset_index()
-        self.status['Connection to Cloud - Successful'] = self.get_current_time()
+        # self.status['Connection to Cloud - Successful'] = self.get_current_time()
         JsonData = {}
         
         for item in grouped.values.tolist():
@@ -89,12 +84,23 @@ class Agent:
         return response
 
     
-    def filter_from_db(self,item_name = None,download_request = False):
+    import base64
+    
+    def filter_from_db(self, item_name=None, download_request=False):
         if download_request:
             return 0
         elif item_name is not None:
-            data = base64.b64decode(self.__df[self.__df['Type'] == item_name]['PII'].values[0])
-            return data
+            filtered_df = self.__df[self.__df['Type'] == item_name]
+    
+            # Check if the filtered DataFrame is not empty
+            if not filtered_df.empty:
+                data = base64.b64decode(filtered_df['PII'].values[0])
+                return data
+            else:
+                # Handle the case where no matching item is found
+                print(f"No data found for item_name: {item_name}")
+                return None
+    
     
     
     def process_request(self):
@@ -138,9 +144,7 @@ class Agent:
     
     def decrypt_data(self,item):
         return self.cipher_suite.decrypt(item).decode('utf-8')
-    def logout(self):
-        del self
-        return True
+    
     def get_all_data(self):
         df = self.refresh_data()
         # if '_id' in df:
@@ -149,8 +153,10 @@ class Agent:
             if df.loc[i, 'Type'] == 'KeyID':
                 pass
             else:
-                df.loc[i, 'PII'] = self.decrypt_data(self.filter_from_db(df.loc[i, 'Type']))
-                # print(df.loc[i,'PII'])
+                try:
+                    df.loc[i, 'PII'] = self.decrypt_data(self.filter_from_db(df.loc[i, 'Type']))
+                except:
+                    df.loc[i,'PII'] = 'Please restart the application and server for data retrieval-Data Yet to be backed up'
         return df
     
 
@@ -258,14 +264,25 @@ class Agent:
         except Exception:
                 return False
 
-    def collect_logs(self):
-        s3 = boto3.client('s3')
-        log_date = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        with open('application.log','rb') as f:
-            s3.upload_fileobj(f, self.s3, f'logs/application_{log_date}.log')
-            # os.remove('application.log')
-            return True
-        return False
+    
+
+    
+    def process_file(self,mode,data=None,file_path=None):
+        if file_path:
+            path = file_path
+        else:
+            path = self.input_path
+        if 'r' in mode:
+            with open(path, mode) as f:
+                data = f.read()
+        elif 'w' in mode:
+            with open(path,mode) as f:
+                data = f.write(data)
+                self.stored_file_names.append(path)
+                print('Stored: ', path)
+                return True  
+        return data
+
     def upload_securely(self):
         self.refresh_data().to_csv(CONSTANTS.DATA_FILE_CSV,columns=['Type','Category','PII'])
         s3 = boto3.client('s3')
@@ -285,25 +302,6 @@ class Agent:
         except Exception as e:
             print(f"Error uploading file to S3: {e}")
             return False
-
-    
-    def process_file(self,mode,data=None,file_path=None):
-        if file_path:
-            path = file_path
-        else:
-            path = self.input_path
-        if 'r' in mode:
-            with open(path, mode) as f:
-                data = f.read()
-        elif 'w' in mode:
-            with open(path,mode) as f:
-                data = f.write(data)
-                self.stored_file_names.append(path)
-                print('Stored: ', path)
-                return True  
-        return data
-
-    
     
     def end_work(self):
         for file in [self.encrypt_path,'encrypted_data_key.txt']:
@@ -312,7 +310,7 @@ class Agent:
             file = self.stored_file_names.pop()
             os.remove(file)
             time.sleep(0.5)
-        self.status['Post Exit CleanUp: All'] = self.get_current_time()
+        # self.status['Post Exit CleanUp: All'] = self.get_current_time()
 
 
 if __name__ == '__main__':

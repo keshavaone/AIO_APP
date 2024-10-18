@@ -4,6 +4,7 @@ from PyQt5.QtCore import *
 import sys, os, time, ast, logging, hashlib, base64, subprocess,json
 import pandas as pd
 from SecureAPI import Agent  # type: ignore
+from Assistant import Assistant  # type: ignore
 import CONSTANTS  #type: ignore
 
 # Setup logging with rotation
@@ -93,13 +94,13 @@ class PIIWindow(QMainWindow):
         return table
     
     def logout_user(self):
-        self.update_log(self.agent.get_current_time(),'Logging Out...')
+        self.update_log(self.assistant.get_current_time(),'Logging Out...')
         self.UIComponents()
-        self.update_log(self.agent.get_current_time(),'Logged Out Successfully.')
+        self.update_log(self.assistant.get_current_time(),'Logged Out Successfully.')
         self.cleanup_on_exit()
         self.modified = False
         self.btnLogOut.setVisible(False)
-        self.agent.logout()
+        self.assistant.logout()
         self.agent = None
     def add_new_entry(self):
         dialog = QDialog(self)
@@ -254,7 +255,7 @@ class PIIWindow(QMainWindow):
             response = json.loads(subprocess.check_output(insertion).decode('ascii'))
             if response["response"]:
                 QMessageBox.information(self, "Insertion Successful", "New entry has been inserted successfully!")
-                self.update_log(self.agent.get_current_time(), f"Inserted new entry: {new_entry}")
+                self.update_log(self.assistant.get_current_time(), f"Inserted new entry: {new_entry}")
                 dialog.accept()
                 data = self.agent.get_options_to_choose()
                 self.populate_data_table(data)
@@ -264,11 +265,11 @@ class PIIWindow(QMainWindow):
             QMessageBox.warning(self, "Invalid Input", "Please check the Error Below.\n\n"+str(e))
 
     def download_pii(self):
-        self.update_log(self.agent.get_current_time(), "PII Data Download Attempted")
+        self.update_log(self.assistant.get_current_time(), "PII Data Download Attempted")
         pre_download_time_stamp = time.time()
         response = self.agent.download_excel()
-        self.update_log(self.agent.get_current_time(), f"PII Data Download Time: {time.time() - pre_download_time_stamp:.2f} Seconds")
-        self.update_log(self.agent.get_current_time(), "PII Data Download Function Response: " + str(response))
+        self.update_log(self.assistant.get_current_time(), f"PII Data Download Time: {time.time() - pre_download_time_stamp:.2f} Seconds")
+        self.update_log(self.assistant.get_current_time(), "PII Data Download Function Response: " + str(response))
         if response:
             QMessageBox.information(self, "Download Complete", "Data downloaded and decrypted successfully!")
         else:
@@ -283,104 +284,122 @@ class PIIWindow(QMainWindow):
         self.btnConnectServer.clicked.disconnect(self.show_password_input)
         self.btnConnectServer.clicked.connect(self.authenticate_and_connect)
 
-    
     def show_data_window(self):
-        # Secure the window by disabling certain features
-        data_window = QMainWindow(self)
-        data_window.setWindowTitle("PII Data")
-        data_window.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)
+        try:
+            # Secure the window by disabling certain features
+            data_window = QMainWindow(self)
+            data_window.setWindowTitle("PII Data")
+            data_window.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)
     
-        central_widget = QWidget(data_window)
-        data_window.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+            central_widget = QWidget(data_window)
+            data_window.setCentralWidget(central_widget)
+            layout = QVBoxLayout(central_widget)
     
-        self.table_widget = QTableWidget()
-        layout.addWidget(self.table_widget)
+            self.table_widget = QTableWidget()
+            layout.addWidget(self.table_widget)
     
-        # data_frame = self.agent.get_all_data()
-        # self.data_frame = data_frame.copy()  # Store data frame locally for later use
-        # data_frame.drop('_id',axis=1,inplace=True)
-        view = f'http GET http://127.0.0.1:8000/pii'
-        data_frame = json.loads(subprocess.check_output(view).decode('ascii'))
-        data_frame = pd.DataFrame(data_frame)
-        self.update_log(self.agent.get_current_time(), 'PII Data Displaying...')
+            view = 'http GET http://127.0.0.1:8000/pii'
     
-        # Set DataFrame data to QTableWidget
-        if isinstance(data_frame, pd.DataFrame):
-            num_rows, num_columns = data_frame.shape
-            self.table_widget.setRowCount(num_rows)
-            self.table_widget.setColumnCount(num_columns)
-            self.table_widget.setHorizontalHeaderLabels(data_frame.columns.tolist())
-            self.table_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            try:
+                response = subprocess.check_output(view, shell=True).decode('ascii').strip()
+                if not response:
+                    raise ValueError("Empty response received from the server.")
+                
+                data_frame_json = json.loads(response)  # Ensure response is a valid JSON string
+                data_frame = pd.DataFrame(data_frame_json)
+                self.update_log(self.assistant.get_current_time(), 'PII Data Displaying...')
+            
+            except (subprocess.CalledProcessError, ValueError) as e:
+                self.update_log(self.assistant.get_current_time(), f'Error: {str(e)}')
+                QMessageBox.warning(self, "Connection Error", "Invalid server response or connection issue. Please check the server.")
+                return
+            except json.JSONDecodeError as jde:
+                self.update_log(self.assistant.get_current_time(), f'JSON Error: {str(jde)}')
+                QMessageBox.warning(self, "Data Error", "Received data is not in JSON format.")
+                return
     
-            for row in range(num_rows):
-                for col in range(num_columns):
-                    value = data_frame.iat[row, col]
-                    
-                    # Check if the column is 'PII' and contains a list of dictionaries
-                    if data_frame.columns[col] == 'PII' and isinstance(value, str):
-                        try:
-                            pii_list = ast.literal_eval(value)
-                            if isinstance(pii_list, list) and all(isinstance(d, dict) for d in pii_list):
-                                formatted_value = '\n'.join(
-                                    f"{d['Item Name']} - {str(d['Data'])}"
-                                    for d in pii_list if 'Item Name' in d and 'Data' in d
-                                )
-                                item = QTableWidgetItem(formatted_value)
-                            else:
+            # Set DataFrame data to QTableWidget
+            if isinstance(data_frame, pd.DataFrame):
+                num_rows, num_columns = data_frame.shape
+                self.table_widget.setRowCount(num_rows)
+                self.table_widget.setColumnCount(num_columns)
+                self.table_widget.setHorizontalHeaderLabels(data_frame.columns.tolist())
+                self.table_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    
+                for row in range(num_rows):
+                    for col in range(num_columns):
+                        value = data_frame.iat[row, col]
+    
+                        # Check if the column is 'PII' and contains a list of dictionaries
+                        if data_frame.columns[col] == 'PII' and isinstance(value, str):
+                            try:
+                                pii_list = ast.literal_eval(value)
+                                if isinstance(pii_list, list) and all(isinstance(d, dict) for d in pii_list):
+                                    formatted_value = '\n'.join(
+                                        f"{d['Item Name']} - {str(d['Data'])}"
+                                        for d in pii_list if 'Item Name' in d and 'Data' in d
+                                    )
+                                    item = QTableWidgetItem(formatted_value)
+                                else:
+                                    item = QTableWidgetItem(str(value))
+                            except (ValueError, SyntaxError):
                                 item = QTableWidgetItem(str(value))
-                        except (ValueError, SyntaxError):
+                        else:
                             item = QTableWidgetItem(str(value))
-                    else:
-                        item = QTableWidgetItem(str(value))
-                    
-                    self.table_widget.setItem(row, col, item)
     
-            self.table_widget.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.table_widget.customContextMenuRequested.connect(self.open_context_menu)
+                        self.table_widget.setItem(row, col, item)
     
-        btnDownload = QPushButton('Download Data', data_window)
-        btnDownload.setCursor(QCursor(Qt.PointingHandCursor))
-        btnDownload.setIcon(QIcon('download.png'))
-        btnDownload.clicked.connect(self.download_pii)
-        layout.addWidget(btnDownload)
+                self.table_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+                self.table_widget.customContextMenuRequested.connect(self.open_context_menu)
     
+            btnDownload = QPushButton('Download Data', data_window)
+            btnDownload.setCursor(QCursor(Qt.PointingHandCursor))
+            btnDownload.setIcon(QIcon('download.png'))
+            btnDownload.clicked.connect(self.download_pii)
+            layout.addWidget(btnDownload)
     
-        self.table_widget.resizeColumnsToContents()
-        self.table_widget.resizeRowsToContents()
-        self.table_widget.setSortingEnabled(True) 
-        self.table_widget.sortByColumn(0, Qt.AscendingOrder)
-        self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_widget.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table_widget.horizontalHeader().setStretchLastSection(True)
-        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table_widget.verticalHeader().setVisible(False)
-        self.table_widget.setAlternatingRowColors(True)
-        self.table_widget.setStyleSheet("QTableWidget::item { padding: 5px; }")
+            self.table_widget.resizeColumnsToContents()
+            self.table_widget.resizeRowsToContents()
+            self.table_widget.setSortingEnabled(True)
+            self.table_widget.sortByColumn(0, Qt.AscendingOrder)
+            self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.table_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+            self.table_widget.horizontalHeader().setStretchLastSection(True)
+            self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            self.table_widget.verticalHeader().setVisible(False)
+            self.table_widget.setAlternatingRowColors(True)
+            self.table_widget.setStyleSheet("QTableWidget::item { padding: 5px; }")
     
-        self.pii_table_strt_time = time.time()
-        data_window.showMaximized()
-        data_window.show()
+            self.pii_table_strt_time = time.time()
+            data_window.showMaximized()
+            data_window.show()
     
-        def on_close_event(event):
-            event.accept()
-            close_event_strt_time = time.time()
-            self.update_log(self.agent.get_current_time(), f'Application PII Window Closed')
-            if self.modified:
-                self.update_log(self.agent.get_current_time(), f'Data Backup Initiated...')
-                self.agent.upload_securely()
-                self.update_log(self.agent.get_current_time(), f'Refreshing Data...')
-                refresh_time = time.time()
-                data = self.agent.get_options_to_choose()
-                self.update_log(self.agent.get_current_time(), f'Data Refreshed in {time.time() - refresh_time:.2f} Seconds')
-                self.populate_data_table(data)
-                self.update_log(self.agent.get_current_time(), f'Data Backed Up in {time.time() - close_event_strt_time:.2f} Seconds')
-            close_event_time = close_event_strt_time - self.pii_table_strt_time
-            self.update_log(self.agent.get_current_time(), f'Application PII Window Closed after {close_event_time:.2f} Seconds')
-            
-            
-
-        data_window.closeEvent = on_close_event
+            def on_close_event(event):
+                event.accept()
+                close_event_strt_time = time.time()
+                self.update_log(self.assistant.get_current_time(), f'Application PII Window Closed')
+                if self.modified:
+                    self.update_log(self.assistant.get_current_time(), f'Data Backup Initiated...')
+                    self.agent.upload_securely()
+                    self.update_log(self.assistant.get_current_time(), f'Refreshing Data...')
+                    refresh_time = time.time()
+                    data = self.agent.get_options_to_choose()
+                    self.update_log(self.assistant.get_current_time(), f'Data Refreshed in {time.time() - refresh_time:.2f} Seconds')
+                    self.populate_data_table(data)
+                    self.update_log(self.assistant.get_current_time(), f'Data Backed Up in {time.time() - close_event_strt_time:.2f} Seconds')
+                close_event_time = close_event_strt_time - self.pii_table_strt_time
+                self.update_log(self.assistant.get_current_time(), f'Application PII Window Closed after {close_event_time:.2f} Seconds')
+    
+            data_window.closeEvent = on_close_event
+    
+        except subprocess.CalledProcessError as e:
+            if 'ConnectionError' in str(e.output.decode('utf-8')):
+                self.update_log(self.assistant.get_current_time(), 'Connection Error: Unable to reach server.')
+                QMessageBox.warning(self, "Connection Error", "Please run the Server. Application unable to detect SERVER")
+                return
+            else:
+                QMessageBox.warning(self, "Connection Error", "Please run the Server. Application unable to detect SERVER")
+    
     
     def open_context_menu(self, position):
         menu = QMenu()
@@ -494,9 +513,9 @@ class PIIWindow(QMainWindow):
             try:
                 response = json.loads(subprocess.check_output(updation, shell=True).decode('ascii'))
                 if response.get("response"):
-                    self.update_log(self.agent.get_current_time(), f"Update Time: {time.time() - self.time_updt_strt_time:.2f} Seconds")
-                    self.update_log(self.agent.get_current_time(), f"Update Function Response: {response}")
-                    self.update_log(self.agent.get_current_time(), f"Modified: {final_item['Category']}'s {final_item['Type']} - PII")
+                    self.update_log(self.assistant.get_current_time(), f"Update Time: {time.time() - self.time_updt_strt_time:.2f} Seconds")
+                    self.update_log(self.assistant.get_current_time(), f"Update Function Response: {response}")
+                    self.update_log(self.assistant.get_current_time(), f"Modified: {final_item['Category']}'s {final_item['Type']} - PII")
                     self.modified = True
                     QMessageBox.information(self, "Update Successful", "Data updated successfully!")
                 else:
@@ -527,7 +546,7 @@ class PIIWindow(QMainWindow):
             self.password_input.clear()
             self.password_input.setHidden(True)
             self.connect_to_server()
-            self.update_log(self.agent.get_current_time(), 'Authentication Successful')
+            self.update_log(self.assistant.get_current_time(), 'Authentication Successful')
         else:
             QMessageBox.warning(self, "Authentication Failed", "Incorrect Password!")
             self.password_input.clear()
@@ -537,6 +556,7 @@ class PIIWindow(QMainWindow):
     def connect_to_server(self):
         self.btnConnectServer.setDisabled(True)
         self.agent = Agent(s3=CONSTANTS.AWS_S3, file_name=CONSTANTS.AWS_FILE)
+        self.assistant = Assistant(CONSTANTS.AWS_S3)
         self.btnConnectServer.setText('Connected')
         self.btnConnectServer.setDisabled(True)
         self.btnConnectServer.setStyleSheet("background-color: green; color: white;")
@@ -567,9 +587,9 @@ class PIIWindow(QMainWindow):
         self.timer.start(1000)
         data = self.agent.get_options_to_choose()
         self.populate_data_table(data)
-        self.update_log(self.agent.get_current_time(), "Connected to Server.")
-        self.update_log(self.agent.get_current_time(), 'Display Data Button: Activated')
-        self.update_log(self.agent.get_current_time(), 'Add New Entry Button: Activated')
+        self.update_log(self.assistant.get_current_time(), "Connected to Server.")
+        self.update_log(self.assistant.get_current_time(), 'Display Data Button: Activated')
+        self.update_log(self.assistant.get_current_time(), 'Add New Entry Button: Activated')
 
     def on_data_table_selection(self):
         selected_items = self.data_table.selectedItems()
@@ -577,7 +597,7 @@ class PIIWindow(QMainWindow):
             return
         selected_item_text = selected_items[0].text()
         sub_options = self.agent.get_sub_options_to_choose(selected_item_text)
-        self.update_log(self.agent.get_current_time(), f"Selected item: {selected_item_text}")
+        self.update_log(self.assistant.get_current_time(), f"Selected item: {selected_item_text}")
 
         sub_option, ok_pressed = QInputDialog.getItem(
             self,
@@ -589,7 +609,7 @@ class PIIWindow(QMainWindow):
         )
         if ok_pressed and sub_option:
             output = self.agent.get_final_output(sub_option)
-            self.update_log(self.agent.get_current_time(), f"Selected {selected_item_text}'s sub option: {sub_option}")
+            self.update_log(self.assistant.get_current_time(), f"Selected {selected_item_text}'s sub option: {sub_option}")
             self.show_output_dialog(sub_option, output)
 
     def show_output_dialog(self, sub_option, output):
@@ -598,7 +618,7 @@ class PIIWindow(QMainWindow):
         def on_close_event(event):
             event.accept()
             end_time = time.time() - self.start_time
-            self.update_log(self.agent.get_current_time(), f"{self.option}'s dialog closed after {end_time:.2f} seconds")
+            self.update_log(self.assistant.get_current_time(), f"{self.option}'s dialog closed after {end_time:.2f} seconds")
             
 
         dialog = QDialog(self)
@@ -634,7 +654,7 @@ class PIIWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Error Code: 404 and 503 WARNING MESSAGE", "You are Not Allowed to view this here.")
                 return
-        self.update_log(self.agent.get_current_time(), f"Displaying... {self.option}")
+        self.update_log(self.assistant.get_current_time(), f"Displaying... {self.option}")
 
         scroll_content.setLayout(scroll_layout)
         scroll_area.setWidget(scroll_content)
@@ -649,7 +669,7 @@ class PIIWindow(QMainWindow):
         def on_accept():
             end_time = time.time()
             duration = end_time - start_time
-            self.update_log(self.agent.get_current_time(), f"{self.option}'s dialog was visible for {duration:.2f} seconds")
+            self.update_log(self.assistant.get_current_time(), f"{self.option}'s dialog was visible for {duration:.2f} seconds")
             dialog.accept()
 
         close_button.clicked.connect(on_accept)
@@ -657,16 +677,18 @@ class PIIWindow(QMainWindow):
         dialog.exec_()
 
     def fetch_status(self):
-        if hasattr(self, 'agent') and hasattr(self.agent, 'status'):
-            for task_name, task_time in self.agent.status.items():
-                self.update_log(task_time, task_name)
-            self.agent.status = {}
-
+        try:
+            if hasattr(self, 'agent') and hasattr(self.agent, 'status'):
+                for task_name, task_time in self.agent.status.items():
+                    self.update_log(task_time, task_name)
+                self.agent.status = {}
+        except AttributeError:
+            pass
     def copy_to_clipboard(self, data):
         clipboard = QApplication.clipboard()
         clipboard.setText(str(data['Data']))
         
-        self.update_log(self.agent.get_current_time(), f"Copied {self.option}'s {data['Item Name']} to Clipboard.")
+        self.update_log(self.assistant.get_current_time(), f"Copied {self.option}'s {data['Item Name']} to Clipboard.")
         QMessageBox.information(self, "Copied", f"{data['Item Name']} Copied to Clipboard.")
 
     def update_log(self, task_time, task_name):
@@ -691,11 +713,11 @@ class PIIWindow(QMainWindow):
        for log_file in log_files:
         if os.path.exists(log_file):
             try:
-                self.update_log(self.agent.get_current_time(), f"Processing Logging Data...")
+                self.update_log(self.assistant.get_current_time(), f"Processing Logging Data...")
                 pre_log_time = time.time()
-                self.agent.collect_logs()
+                self.assistant.collect_logs()
                 print('Done')
-                self.update_log(self.agent.get_current_time(), f"Log Data Backedup in {time.time() - pre_log_time:.2f} Seconds")
+                self.update_log(self.assistant.get_current_time(), f"Log Data Backedup in {time.time() - pre_log_time:.2f} Seconds")
             except AttributeError:
                 logging.info("EVNT_FLRE: Closed the Application without Login.")
                 print('Done')
@@ -747,11 +769,11 @@ class PIIWindow(QMainWindow):
             response = json.loads(subprocess.check_output(deletion).decode('ascii'))
             if response['response']:
                 QMessageBox.information(self, "Deletion Complete", "Item deleted successfully!")
-                self.update_log(self.agent.get_current_time(), f"Deleted Item: {item_info['Category']} - {item_info['Type']}")
+                self.update_log(self.assistant.get_current_time(), f"Deleted Item: {item_info['Category']} - {item_info['Type']}")
                 self.table_widget.removeRow(row)
             else:
                 QMessageBox.warning(self, "Delete Error", "Failed to delete the item.")
-                self.update_log(self.agent.get_current_time(), "Failed to delete the item.")
+                self.update_log(self.assistant.get_current_time(), "Failed to delete the item.")
 
 
 if __name__ == '__main__':
