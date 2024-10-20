@@ -636,7 +636,7 @@ class PIIWindow(QMainWindow):
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_content.maximumSize()
         dialog.maximumSize()
-        
+        print(output)
         for item in output:
             h_layout = QHBoxLayout()
             copy_button = QPushButton('Copy', dialog)

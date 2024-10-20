@@ -6,6 +6,7 @@ import pandas as pd #type:ignore
 import atexit
 import ast, datetime
 import CONSTANTS
+from KMS import KMS
 from pymongo import MongoClient # type: ignore
 from pymongo.server_api import ServerApi # type: ignore
 
@@ -17,74 +18,55 @@ class Agent:
     input_path:str = 'ReQuest.txt'
     encrypt_path:str = 'encrypted_text.txt'
     stored_file_names:list[str] = field(default_factory=list)
-    
 
+    os.chdir(os.path.dirname(os.path.realpath(__file__)))
     
-
     def __post_init__(self):
+        self.data_path:str = self.file_name
+        
         self.status = {'Waking Up Mr.Agent...'}
-        # Create a MongoClient to the running MongoDB instance
         client = MongoClient('mongodb://localhost:27017/',server_api=ServerApi('1'))
 
         # Access the database (MyPII) and collection (PIIData)
         db = client['MyPII']
         self.collection = db['PIIData']
-        
+        self.__df = self.refresh_data()
+        self.fetch_my_key()
         os.chdir(os.path.dirname(os.path.realpath(__file__)))
-        self.kms_client = boto3.client('kms')
         self.data_path:str = self.file_name
         aws_key = os.getenv('AWS_KEY')
         assert aws_key != None
-        self.__key_id = aws_key
-        # self.status['Agent Ready'] = self.get_current_time()
-        self.fetch_my_key()
-        # self.process_file(mode='w',data='Success',file_path='status.txt')
         atexit.register(self.end_work)
     
-    def create_new_key(self):
-        self.__df = pd.read_excel(self.data_path)
-        self.key = self.generate_secure_key('AES_256')
-        self.__key = self.key['Plaintext']
-        self.storing_key = self.key['CiphertextBlob']
-        self.cipher_suite = Fernet(base64.urlsafe_b64encode(self.__key))
 
     def fetch_my_key(self):
         # self.status['Agent Requested to Perform Connection to Cloud...'] = self.get_current_time()
         # self.__df = self.read_excel_from_s3(self.s3,self.file_name)
-        data = self.collection.find()
-        df = pd.DataFrame(data)
-        self.__df = df.drop('_id',axis=1)
-        grouped = self.__df.groupby('Category')['Type'].apply(list).reset_index()
-        # self.status['Connection to Cloud - Successful'] = self.get_current_time()
-        JsonData = {}
+        # df = self.refresh_data()
+        # self.__df = df.drop('_id',axis=1)
+        # grouped = self.__df.groupby('Category')['Type'].apply(list).reset_index()
+        # # self.status['Connection to Cloud - Successful'] = self.get_current_time()
+        # JsonData = {}
         
-        for item in grouped.values.tolist():
-            keys = item[0].split('.')
-            if len(keys) == 1:
-                # If there's only one key, add the values as a list
-                JsonData[keys[0]] = item[1]
-            else:
-                # If there are multiple keys, create a nested dictionary and append it to the list
-                if keys[0] not in JsonData:
-                    JsonData[keys[0]] = []
-                JsonData[keys[0]].append({keys[1]: item[1]})
+        # for item in grouped.values.tolist():
+        #     keys = item[0].split('.')
+        #     if len(keys) == 1:
+        #         # If there's only one key, add the values as a list
+        #         JsonData[keys[0]] = item[1]
+        #     else:
+        #         # If there are multiple keys, create a nested dictionary and append it to the list
+        #         if keys[0] not in JsonData:
+        #             JsonData[keys[0]] = []
+        #         JsonData[keys[0]].append({keys[1]: item[1]})
 
-        JsonData = json.dumps(JsonData)
+        # JsonData = json.dumps(JsonData)
         self.__encoded_key = self.filter_from_db('KeyID')
-        response = self.kms_client.decrypt(CiphertextBlob=self.__encoded_key)
-        fernet_key = base64.urlsafe_b64encode(response['Plaintext'])
-        self.cipher_suite = Fernet(fernet_key)
-        return 
+        self.kms_client = KMS()
+        self.cipher_suite = self.kms_client.decrypt_my_key(self.__encoded_key)
+        # self.cipher_suite = self.kms_client.decrypt_my_key(self.__encoded_key) 
     
-    def generate_secure_key(self, key_spec):
-        response = self.kms_client.generate_data_key(
-            KeyId=self.__key_id,
-            KeySpec=key_spec
-        )
-        return response
+    
 
-    
-    import base64
     
     def filter_from_db(self, item_name=None, download_request=False):
         if download_request:
@@ -142,9 +124,7 @@ class Agent:
     def refresh_data(self):
         return pd.DataFrame(self.collection.find())
     
-    def decrypt_data(self,item):
-        return self.cipher_suite.decrypt(item).decode('utf-8')
-    
+     
     def get_all_data(self):
         df = self.refresh_data()
         # if '_id' in df:
@@ -154,9 +134,9 @@ class Agent:
                 pass
             else:
                 try:
-                    df.loc[i, 'PII'] = self.decrypt_data(self.filter_from_db(df.loc[i, 'Type']))
+                    df.loc[i, 'PII'] = self.kms_client.decrypt_data(self.filter_from_db(df.loc[i, 'Type']))
                 except:
-                    df.loc[i,'PII'] = 'Please restart the application and server for data retrieval-Data Yet to be backed up'
+                    df.loc[i,'PII'] = 'Data may have inserted in the current session. please restart to see this entry'
         return df
     
 
