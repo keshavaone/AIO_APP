@@ -1,55 +1,44 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request, Depends
 import uvicorn
-from fastapi.responses import JSONResponse
-from SecureAPI import Agent
+from Backend import Agent
 import CONSTANTS  # type: ignore
-from pydantic import BaseModel, ValidationError
-from typing import List, Dict, Any
-import pandas as pd
-import json,ast
+from pydantic import ValidationError
+from typing import Dict, Any
+from collections import Counter
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+counter_calls = Counter()
 
-"""
-Use the Below Command:
-http POST http://127.0.0.1:8000/pii Category="Dummy" PII="[{'Item Name':'Dummy Item Name','Data':'New Item'},{'Item Name':'Dummy Item2', 'Data':'Dummy Data'}]" Type="TypePII"
-http PATCH http://127.0.0.1:8000/pii Category="Dummy" PII="[{'Item Name':'Dummy Item Name','Data':'New Item'},{'Item Name':'Dummy Item2', 'Data':'Dummy Data'}]" Type="TypePII"
-http GET http://127.0.0.1:8000/pii
-the command is still not fully functional
-"""
 
 file_name = CONSTANTS.AWS_FILE
 s3 = CONSTANTS.AWS_S3
 agent = Agent(s3=s3, file_name=file_name)
 
 """
- CREATE APIs with Security, Authenticity and Authority.
- 1. API for CREATE, READ, UPDATE and DELETE.
- 2. API for CLOUD CONNECTION, ENCRYPTION AND DECRYPTION.
- 3. API for Data Security and Authenticity.
- 4. API for Logs Monitoring.
- 5. API for Backups.
+ 1. CREATE APIs with Security, Authenticity and Authority.
+ 2. API for Data Security and Authenticity.
+ 3. API for Backups.
  """
 
-# Define a global variable to keep track of total API calls
-global totalAPICalls
-totalAPICalls = 0
+origins = ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def gather_logs(func):
-    def wrapper(*args, **kwargs):
-        global totalAPICalls  # Declare totalAPICalls as global to modify its value
-        try:
-            totalAPICalls += 1  # Increment the global totalAPICalls
-            print(f"Total API Calls: {totalAPICalls}")
-            result = func(*args, **kwargs)  # Call the original function
-            return result  # Return the result of the function call
-        except Exception as e:
-            raise e  # Raise any exceptions encountered
-    return wrapper  # Return the wrapper function
+@app.middleware("http")
+async def count_api_calls(request: Request, call_next):
+    response = await call_next(request)
+    counter_calls["totalCalls"] += 1
+    print('Total API Calls: ',counter_calls["totalCalls"])
+    print('Calling:',request.method, request.url)
+    return response
 
-@gather_logs
 def process_data(item,operation):
-    
     try:
         match operation:
             case 'insert':
@@ -58,6 +47,8 @@ def process_data(item,operation):
                 response = agent.update_one_data(item)
             case 'delete':
                 response = agent.delete_one_data(item)
+            case 'get':
+                return agent.get_all_data()
             case _:
                 raise ValueError("Invalid operation")
         
@@ -70,27 +61,22 @@ def process_data(item,operation):
 
 #1. API for CREATE
 @app.post("/pii")
-def insert_pii_item(item: Dict[str, Any]):
+async def insert_pii_item(item: Dict[str, Any]):
     return process_data(item, 'insert')
 
 
 @app.patch("/pii")
-def update_pii_item(item: Dict[str, Any]):
+async def update_pii_item(item: Dict[str, Any]):
     return process_data(item, 'update')
 
 
 @app.delete("/pii")
-def delete_pii_item(item: Dict[str, Any]):
+async def delete_pii_item(item: Dict[str, Any]):
     return process_data(item, 'delete')
 
-@gather_logs
 @app.get("/pii")
-def get_pii_data():
-    print(f"Total API Calls: {totalAPICalls}")
-    data = agent.get_all_data()
-    data.drop('_id',axis=1,inplace=True)
-    data = data.to_dict(orient='records')
-    return data
+async def get_pii_data():
+   return process_data(None, 'get')
 
 
 if __name__ == "__main__":

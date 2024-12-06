@@ -48,6 +48,7 @@ class KMS:
         self.__key = self.key['Plaintext']
         self.storing_key = self.key['CiphertextBlob']
         self.cipher_suite = Fernet(base64.urlsafe_b64encode(self.__key))
+        return self.cipher_suite
 
     def decrypt_data(self,item):
         return self.cipher_suite.decrypt(item).decode('utf-8')

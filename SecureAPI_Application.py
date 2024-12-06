@@ -3,9 +3,13 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 import sys, os, time, ast, logging, hashlib, base64, subprocess,json
 import pandas as pd
-from SecureAPI import Agent  # type: ignore
+import requests
+from Backend import Agent  # type: ignore
 from Assistant import Assistant  # type: ignore
 import CONSTANTS  #type: ignore
+from PyQt5 import QtCore
+from PyQt5.QtWidgets import QInputDialog
+
 
 # Setup logging with rotation
 from logging.handlers import RotatingFileHandler
@@ -242,8 +246,14 @@ class PIIWindow(QMainWindow):
             pii_items.remove((item_name_input, item_data_input))
     
     
+    def process_request(self):
+        response = requests.get(CONSTANTS.URL)
+        if response.status_code != 200:
+            QMessageBox.warning(self, "Error", "Failed to fetch data from server.")
+            return
+        data = pd.DataFrame.from_records(response.json())
+        return data
     
-
     def insert_to_db(self, dialog, category, type_, pii):
         try:
             new_entry = {
@@ -251,13 +261,14 @@ class PIIWindow(QMainWindow):
                 "Type": type_,
                 "PII": str(pii)
             }
-            insertion = f'http POST http://127.0.0.1:8000/pii Category="{category}" PII="{pii}" Type="{type_}"'
-            response = json.loads(subprocess.check_output(insertion).decode('ascii'))
-            if response["response"]:
+            response = requests.post(CONSTANTS.URL,json=new_entry)
+            if response.status_code == 200:
+                response = response.json()
                 QMessageBox.information(self, "Insertion Successful", "New entry has been inserted successfully!")
+                new_entry.update({'PII':'Hidden'})
                 self.update_log(self.assistant.get_current_time(), f"Inserted new entry: {new_entry}")
                 dialog.accept()
-                data = self.agent.get_options_to_choose()
+                data = self.process_request()
                 self.populate_data_table(data)
             else:
                 QMessageBox.warning(self, "Insertion Failed", f"Failed to insert new entry.\n{response}")
@@ -298,15 +309,13 @@ class PIIWindow(QMainWindow):
             self.table_widget = QTableWidget()
             layout.addWidget(self.table_widget)
     
-            view = 'http GET http://127.0.0.1:8000/pii'
-    
             try:
-                response = subprocess.check_output(view, shell=True).decode('ascii').strip()
-                if not response:
+                response = requests.get(CONSTANTS.URL)
+                if response.status_code != 200:
                     raise ValueError("Empty response received from the server.")
-                
-                data_frame_json = json.loads(response)  # Ensure response is a valid JSON string
-                data_frame = pd.DataFrame(data_frame_json)
+                  # Ensure response is a valid JSON string
+                response = response.json()
+                data_frame = pd.DataFrame(response)
                 self.update_log(self.assistant.get_current_time(), 'PII Data Displaying...')
             
             except (subprocess.CalledProcessError, ValueError) as e:
@@ -383,7 +392,7 @@ class PIIWindow(QMainWindow):
                     self.agent.upload_securely()
                     self.update_log(self.assistant.get_current_time(), f'Refreshing Data...')
                     refresh_time = time.time()
-                    data = self.agent.get_options_to_choose()
+                    data = self.process_request()
                     self.update_log(self.assistant.get_current_time(), f'Data Refreshed in {time.time() - refresh_time:.2f} Seconds')
                     self.populate_data_table(data)
                     self.update_log(self.assistant.get_current_time(), f'Data Backed Up in {time.time() - close_event_strt_time:.2f} Seconds')
@@ -437,6 +446,32 @@ class PIIWindow(QMainWindow):
         dialog.setWindowTitle("Edit PII")
         layout = QVBoxLayout()
     
+        # Add + button to add new Item Name and Data at the top right
+        def add_new_item_data():
+            hbox = QHBoxLayout()
+            
+            item_name_label = QLabel("Item Name:")
+            item_name_edit = QLineEdit("")
+            hbox.addWidget(item_name_label)
+            hbox.addWidget(item_name_edit)
+    
+            data_label = QLabel("Data:")
+            data_edit = QLineEdit("")
+            hbox.addWidget(data_label)
+            hbox.addWidget(data_edit)
+    
+            layout.insertLayout(layout.count() - 1, hbox)
+            edits.append((item_name_edit, data_edit))
+    
+        # top_layout = QHBoxLayout()
+        # top_layout.addStretch()  # Pushes the button to the right
+        # add_button = QPushButton("+")
+        # add_button.setFixedSize(20,20)
+        # add_button.clicked.connect(add_new_item_data)
+        # top_layout.addWidget(add_button)
+        # layout.addLayout(top_layout)
+        
+    
         # Process old_value into multiple item name-data pairs
         list_of_pairs = []
         for pair in old_value.split('\n'):
@@ -467,16 +502,17 @@ class PIIWindow(QMainWindow):
         # Add OK and Cancel buttons
         button_layout = QHBoxLayout()
         ok_button = QPushButton("OK")
-        cancel_button = QPushButton("Cancel")
+        add_button = QPushButton("Add New Item")
+        # add_button.setFixedSize(20,20)
+        add_button.clicked.connect(add_new_item_data)
         button_layout.addWidget(ok_button)
-        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(add_button)
         layout.addLayout(button_layout)
         dialog.setLayout(layout)
     
         # Connect buttons to appropriate slots
         ok_button.clicked.connect(dialog.accept)
-        cancel_button.clicked.connect(dialog.reject)
-    
+        
         # Show the dialog and handle the result
         if dialog.exec_() == QDialog.Accepted:
             new_values = []
@@ -503,16 +539,16 @@ class PIIWindow(QMainWindow):
             final_item["Type"] = self.table_widget.item(row, column).text()
             
             final_item["PII"] = final_value
-            print(final_item)
-            pii = final_item['PII']
-            type_ = final_item['Type']
-            category = final_item['Category']
+            update_data = {
+                'Category':final_item['Category'],
+                'PII':final_item['PII'].replace('"', "\'"),
+                'Type':final_item['Type']
+            }
             self.time_updt_strt_time = time.time()
-            pii = pii.replace('"', "\'")
-            updation = f'http PATCH http://127.0.0.1:8000/pii Category="{category}" PII="{pii}" Type="{type_}"'
             try:
-                response = json.loads(subprocess.check_output(updation, shell=True).decode('ascii'))
-                if response.get("response"):
+                response = requests.patch(CONSTANTS.URL,json=update_data)
+                if response.status_code == 200:
+                    response = response.json()
                     self.update_log(self.assistant.get_current_time(), f"Update Time: {time.time() - self.time_updt_strt_time:.2f} Seconds")
                     self.update_log(self.assistant.get_current_time(), f"Update Function Response: {response}")
                     self.update_log(self.assistant.get_current_time(), f"Modified: {final_item['Category']}'s {final_item['Type']} - PII")
@@ -522,6 +558,8 @@ class PIIWindow(QMainWindow):
                     QMessageBox.warning(self, "Update Failed", f"Failed to update data!\n{response}")
             except subprocess.CalledProcessError as e:
                 QMessageBox.critical(self, "Error", f"An error occurred while updating: {e}")
+    
+    
     
     
     def copy_selected_row(self):
@@ -585,7 +623,7 @@ class PIIWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.fetch_status)
         self.timer.start(1000)
-        data = self.agent.get_options_to_choose()
+        data = self.process_request()
         self.populate_data_table(data)
         self.update_log(self.assistant.get_current_time(), "Connected to Server.")
         self.update_log(self.assistant.get_current_time(), 'Display Data Button: Activated')
@@ -602,41 +640,58 @@ class PIIWindow(QMainWindow):
         sub_option, ok_pressed = QInputDialog.getItem(
             self,
             "Choose Sub Option",
-            f"Sub options for {selected_item_text}:",
+            f"Sub options for {selected_item_text}:"+"  "*45,
             sub_options,
             0,
-            False
-        )
+            False,  # Editable flag set to False
+            QtCore.Qt.WindowFlags(QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowSystemMenuHint | QtCore.Qt.WindowCloseButtonHint)
+
+)
+            
+        
         if ok_pressed and sub_option:
             output = self.agent.get_final_output(sub_option)
             self.update_log(self.assistant.get_current_time(), f"Selected {selected_item_text}'s sub option: {sub_option}")
             self.show_output_dialog(sub_option, output)
 
+ 
     def show_output_dialog(self, sub_option, output):
         self.start_time = time.time()
-
+    
         def on_close_event(event):
             event.accept()
             end_time = time.time() - self.start_time
-            self.update_log(self.assistant.get_current_time(), f"{self.option}'s dialog closed after {end_time:.2f} seconds")
-            
-
+            self.update_log(
+                self.assistant.get_current_time(),
+                f"{self.option}'s dialog closed after {end_time:.2f} seconds"
+            )
+        
+        # Create dialog
         dialog = QDialog(self)
         dialog.setWindowTitle(sub_option)
-        dialog.setGeometry(200, 200, 500, 400)
-        dialog.resize(700, 300)
         self.option = sub_option
-        dialog.move(QCursor.pos())
-
-        dialog_layout = QVBoxLayout(dialog)
         dialog.closeEvent = on_close_event
+    
+        # Calculate the size of the dialog based on content
+        num_items = len(output)
+        item_height = 50  # Approximate height for each item (can be adjusted)
+        base_height = 100  # Base height for dialog components (buttons, etc.)
+        width = 700  # Fixed or calculated width
+        height = min(400, item_height * num_items + base_height)  # Calculate height
+        
+        # Set dialog geometry and move to center
+        screen_geometry = QGuiApplication.primaryScreen().availableGeometry()
+        x = (screen_geometry.width() - width) // 2
+        y = (screen_geometry.height() - height) // 2
+        dialog.setGeometry(x, y, width, height)
+    
+        # Layout setup
+        dialog_layout = QVBoxLayout(dialog)
         scroll_area = QScrollArea(dialog)
         scroll_area.setWidgetResizable(True)
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_content.maximumSize()
-        dialog.maximumSize()
-        print(output)
+    
         for item in output:
             h_layout = QHBoxLayout()
             copy_button = QPushButton('Copy', dialog)
@@ -655,20 +710,22 @@ class PIIWindow(QMainWindow):
                 QMessageBox.warning(self, "Error Code: 404 and 503 WARNING MESSAGE", "You are Not Allowed to view this here.")
                 return
         self.update_log(self.assistant.get_current_time(), f"Displaying... {self.option}")
-
+    
         scroll_content.setLayout(scroll_layout)
         scroll_area.setWidget(scroll_content)
-
+    
         dialog_layout.addWidget(scroll_area)
-        dialog_layout.maximumSize()
         close_button = QPushButton('Close', dialog)
+        close_button.clicked.connect(dialog.close)  # Close button functionality
         dialog_layout.addWidget(close_button)
         dialog_layout.setAlignment(close_button, Qt.AlignRight)
-        start_time = time.time()
+    
+        # dialog.exec_()
+    
 
         def on_accept():
             end_time = time.time()
-            duration = end_time - start_time
+            duration = end_time - self.start_time
             self.update_log(self.assistant.get_current_time(), f"{self.option}'s dialog was visible for {duration:.2f} seconds")
             dialog.accept()
 
@@ -704,6 +761,8 @@ class PIIWindow(QMainWindow):
         logging.info(f"{task_time} - {task_name}")
 
     def populate_data_table(self, data):
+        
+        data = data['Category'].unique()
         self.data_table.setRowCount(len(data))
         for row, item in enumerate(data):
             self.data_table.setItem(row, 0, QTableWidgetItem(item))
@@ -716,11 +775,9 @@ class PIIWindow(QMainWindow):
                 self.update_log(self.assistant.get_current_time(), f"Processing Logging Data...")
                 pre_log_time = time.time()
                 self.assistant.collect_logs()
-                print('Done')
                 self.update_log(self.assistant.get_current_time(), f"Log Data Backedup in {time.time() - pre_log_time:.2f} Seconds")
             except AttributeError:
                 logging.info("EVNT_FLRE: Closed the Application without Login.")
-                print('Done')
     
     def update_item(self, item):
         self.data_table.setCurrentItem(item, QAbstractItemView.Select)
@@ -764,10 +821,12 @@ class PIIWindow(QMainWindow):
     
         if reply == QMessageBox.Yes:
             self.modified = True
-            # response = self.agent.delete_one_data(item_info)
-            deletion = f'http DELETE http://127.0.0.1:8000/pii Category="{item_info["Category"]}" Type="{item_info["Type"]}"'
-            response = json.loads(subprocess.check_output(deletion).decode('ascii'))
-            if response['response']:
+            delete_data = {
+                'Category': item_info['Category'],
+                'Type': item_info['Type']
+            }
+            response = requests.delete(CONSTANTS.URL,json=delete_data)
+            if response.status_code == 200:
                 QMessageBox.information(self, "Deletion Complete", "Item deleted successfully!")
                 self.update_log(self.assistant.get_current_time(), f"Deleted Item: {item_info['Category']} - {item_info['Type']}")
                 self.table_widget.removeRow(row)
