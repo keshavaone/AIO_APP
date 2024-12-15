@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
-import sys, os, time, ast, logging, hashlib, base64, subprocess,json
+import sys, os, time, ast, logging, hashlib, subprocess,json
 import pandas as pd
 import requests
 from Backend import Agent  # type: ignore
@@ -9,6 +9,9 @@ from Assistant import Assistant  # type: ignore
 import CONSTANTS  #type: ignore
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QInputDialog
+import hashlib
+from PyQt5.QtWidgets import QMessageBox
+
 
 
 # Setup logging with rotation
@@ -501,7 +504,7 @@ class PIIWindow(QMainWindow):
     
         # Add OK and Cancel buttons
         button_layout = QHBoxLayout()
-        ok_button = QPushButton("OK")
+        ok_button = QPushButton("Update")
         add_button = QPushButton("Add New Item")
         # add_button.setFixedSize(20,20)
         add_button.clicked.connect(add_new_item_data)
@@ -699,8 +702,10 @@ class PIIWindow(QMainWindow):
             copy_button.setCursor(QCursor(Qt.PointingHandCursor))
             if isinstance(item, dict):
                 label = QLabel(f"{item['Item Name']} : {str(item['Data'])}", dialog)
+                item["Button"] = copy_button
                 copy_button.clicked.connect(lambda checked, data=item: self.copy_to_clipboard(data))
                 label.setWordWrap(True)
+                copy_button.setStyleSheet("background-color: White; color: Black;")
                 label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 h_layout.addWidget(label)
                 h_layout.addWidget(copy_button)
@@ -744,9 +749,10 @@ class PIIWindow(QMainWindow):
     def copy_to_clipboard(self, data):
         clipboard = QApplication.clipboard()
         clipboard.setText(str(data['Data']))
-        
+        data["Button"].setText("Copied")
+        data["Button"].setStyleSheet("background-color: green; color: white; font-weight: bold;")
         self.update_log(self.assistant.get_current_time(), f"Copied {self.option}'s {data['Item Name']} to Clipboard.")
-        QMessageBox.information(self, "Copied", f"{data['Item Name']} Copied to Clipboard.")
+        # QMessageBox.information(self, "Copied", f"{data['Item Name']} Copied to Clipboard.")
 
     def update_log(self, task_time, task_name):
         row_position = self.log_table.rowCount()

@@ -5,7 +5,9 @@ import CONSTANTS  # type: ignore
 from pydantic import ValidationError
 from typing import Dict, Any
 from collections import Counter
+import logging
 from fastapi.middleware.cors import CORSMiddleware
+from logging.handlers import RotatingFileHandler
 
 app = FastAPI()
 counter_calls = Counter()
@@ -29,13 +31,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+handler = RotatingFileHandler('application.log', maxBytes=1000000, backupCount=3)
+logging.basicConfig(handlers=[handler], level=logging.INFO)
 @app.middleware("http")
 async def count_api_calls(request: Request, call_next):
     response = await call_next(request)
     counter_calls["totalCalls"] += 1
     print('Total API Calls: ',counter_calls["totalCalls"])
-    print('Calling:',request.method, request.url)
+    print('Current Session-Calling:',counter_calls["totalCalls"],request.method,':', request.url)
+    logging.info(f"Log from API EndPoint - Current Session-Calling Count: '{counter_calls['totalCalls']}'. Method: '{request.method}'. EndPoint: '{request.url}'")
     return response
 
 def process_data(item,operation):
